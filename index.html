@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Foam Capital Gantt Test</title>
+
+  <!-- ①  Frappe Gantt core CSS -->
+  <link rel="stylesheet"
+        href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.css" />
+
+  <!-- ②  Your brand overrides + container constraint -->
+  <link rel="stylesheet" href="fundraising-gantt.css" />
+
+  <style>
+    /* Center for demo: adjust or remove in production */
+    body {
+      display: flex;
+      justify-content: center;
+      padding: 40px;
+      background: #f9fafb;
+      font-family: Arial, sans-serif;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ③  Gantt container -->
+  <div id="gantt-target"></div>
+
+  <!-- ④  Frappe Gantt core JS -->
+  <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
+
+  <!-- ⑤  Your configured JS -->
+  <script src="fundraising-gantt.js" defer></script>
+</body>
+</html>
