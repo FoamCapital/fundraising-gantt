@@ -1,75 +1,85 @@
-Foam‑Capital Gantt Timeline Kit
+Foam-Capital Gantt Timeline Kit
+Elegant, brand-ready timeline built on Frappe Gantt — perfect for showcasing fundraising, product road-maps, or project plans on any website (Webflow, plain HTML, etc.).
 
-Elegant, brand‑ready timeline built on Frappe Gantt — perfect for showcasing fundraising, product road‑maps, or project plans on any website (Webflow, plain HTML, etc.).
+Files in This Kit
+File	Purpose
+foam-gantt.css	Brand overrides: tints bars #35898b, styles pop-ups, and softly shades weekends.
+foam-gantt.js	All JavaScript: task data, custom pop-up HTML, and weekend-highlight logic. Loads after Frappe Gantt’s core script.
+index_local.html	Local sandbox only. Double-click to launch the chart in your browser without deploying. Not meant for production.
+index.html	Local sandbox only pointing to github pages. Double-click to launch the chart in your browser without deploying. Not meant for production.
 
-Files in this Kit
-
-File
-
-Purpose
-
-foam‑gantt.css
-
-Brand‑overrides. Tints bars #35898b, styles pop‑ups, and softly shades weekends.
-
-foam‑gantt.js
-
-All JavaScript: task data, custom pop‑up HTML, and weekend‑highlight logic. Loads after Frappe Gantt’s core script.
-
-foam‑gantt-test.html
-
-Local sandbox only. Lets you double‑click and see the chart without deploying anything. Not meant for production embedding.
-
-Quick‑Embed (Webflow or any HTML page)
-
+Quick-Embed (Webflow or Any HTML Page)
 Add a container where the chart will render:
 
+html
+Copier
+Modifier
 <div id="gantt-target"></div>
-
 Include styles (Frappe core + brand overrides) in your <head>:
 
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.css">
-<link rel="stylesheet" href="https://YOUR-CDN/foam-gantt.css">
-
+html
+Copier
+Modifier
+<!-- Frappe Gantt core CSS -->
+<link
+  rel="stylesheet"
+  href="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.css"
+>
+<!-- Foam-Capital overrides -->
+<link
+  rel="stylesheet"
+  href="https://foamcapital.github.io/fundraising-gantt/foam-gantt.css"
+>
 Include scripts just before the closing </body> tag:
 
+html
+Copier
+Modifier
+<!-- Frappe Gantt core JS -->
 <script src="https://cdn.jsdelivr.net/npm/frappe-gantt@0.6.1/dist/frappe-gantt.min.js"></script>
-<script src="https://YOUR-CDN/foam-gantt.js" defer></script>
+<!-- Foam-Capital overrides -->
+<script src="https://foamcapital.github.io/fundraising-gantt/foam-gantt.js" defer></script>
+Publish — the timeline appears, weekends are tinted, and hover cards show additional info.
 
-Publish — the timeline appears, weekends are tinted, and hover cards show extra info.
+Webflow note:
 
-Webflow note: Put the <div id="gantt-target"> inside an Embed element, and paste the two <link>+<script> pairs in Page Settings → Custom Code (or Site‑wide Custom Code if you’ll reuse them).
+Place the <div id="gantt-target"></div> inside an “Embed” element.
 
-Customising Tasks / Colours
+Paste the two <link>+<script> pairs in Page Settings → Custom Code (or Site-wide Custom Code if reused on multiple pages).
 
-Update tasks inside foam‑gantt.js — each object defines name, start, end, progress, and a custom hover info string.
+Customizing Tasks & Colours
+Tasks:
+Open foam-gantt.js and update the array of task objects. Each task defines:
 
-Change brand colour: edit the --primary token at the top of foam‑gantt.css.
+name
 
-Alter view mode (day / week / month) by tweaking the view_mode option in the JS initialiser.
+start (YYYY-MM-DD)
 
-Local Test (index / foam‑gantt‑test.html)
+end (YYYY-MM-DD)
 
-Double‑clicking foam‑gantt-test.html spins up the same timeline in your browser, pulling Frappe Gantt from a CDN and the local CSS/JS overrides from the same folder.
+progress (0–100)
 
-Use this file to quick‑check edits before pushing to your CDN or deploying on Webflow. It is not loaded by your live site.
+custom.info (a string to display in the hover pop-up)
+
+Brand colour:
+Edit the --primary token at the top of foam-gantt.css to switch from #35898b to your own brand teal (or any hex value).
+
+View mode (Day/Week/Month):
+In foam-gantt.js, find the Gantt constructor’s options and adjust view_mode to "Day", "Week", "Month", or "Year" as desired.
+
+Local Test (foam-gantt-test.html)
+Double-click foam-gantt-test.html to open it in your default browser.
+
+It pulls Frappe Gantt from a CDN and applies the local foam-gantt.css and foam-gantt.js.
+
+Use this file to quickly verify edits before pushing to a CDN or deploying on Webflow.
+
+Note: This file is for local testing only; it is not referenced by your live site.
 
 Troubleshooting
+Symptom	Fix
+Chart doesn’t appear	• Ensure Frappe Gantt’s core script and foam-gantt.js both load after <div id="gantt-target">.
+Bars are grey, not teal	• Confirm foam-gantt.css path is correct and that it appears after the Frappe core CSS.
+Weekend shading missing	• Ensure foam-gantt.js is loading (check browser console for 404 or JS errors).
 
-Symptom
-
-Fix
-
-Chart doesn’t appear
-
-Make sure Frappe Gantt core script and foam-gantt.js load after the <div id="gantt-target">.
-
-Bars are grey, not teal
-
-Confirm foam-gantt.css path is correct and override is after Frappe core CSS.
-
-Weekend shading missing
-
-Ensure foam-gantt.js loads (check console for 404/JS errors).
-
-© Foam Capital — crafted for elegant financial websites.
+© Foam Capital — crafted for elegant financial websites.
