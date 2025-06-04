@@ -1,267 +1,376 @@
-/* foam-gantt.js
-   ----------------------------------------------------
-   Month view (3×350px), truly read-only, hover pop-ups, no scroll/pan,
-   trims bottom whitespace. Must load **after** frappe-gantt.min.js.
-*/
+  /* foam-gantt.js
+    ----------------------------------------------------
+    Month view (3×350px), truly read-only, hover pop-ups, no scroll/pan,
+    trims bottom whitespace. Must load **after** frappe-gantt.min.js.
+  */
 
-;(function () {
-  /* ──────────────────────────────────────────────────────────────────────────
-     1 · Date-format helper
-  ─────────────────────────────────────────────────────────────────────────── */
-  const today = new Date();
-  const fmt   = d => d.toISOString().slice(0, 10);   // "YYYY-MM-DD"
+  // Check if is mobile
+  const isMobile = window.innerWidth < 600;
 
-  /* ──────────────────────────────────────────────────────────────────────────
-     2 · Task definitions (unchanged)
-  ─────────────────────────────────────────────────────────────────────────── */
-  const taskDefs = [
-    { id:'prep',    name:'Deck & Data Room Prep',        duration:14, progress:0,
-      custom:{ info:'Finalize internal assessment, narrative and data pack'} },
-    { id:'io',      name:'Investor Outreach',             duration:10, progress:0,
-      custom:{ info:'Warm Intros, Data Room Access and Management Calls'} },
-    { id:'qna',     name:'Investor Analysis & Q&A',      duration:25, progress:0,
-      custom:{ info:'Investor Assessment & Q&A'} },
-    { id:'ts',      name:'Term-Sheet Negotiation',        duration:10, progress:0,
-      custom:{ info:'Amount, Pricing, Covenants and Securities'} },
-    { id:'approv',  name:'Final Approvals',               duration: 5, progress:0,
-      custom:{ info:'Board and Shareholder approvals'} },
-    { id:'dd',      name:'Due Diligence',                 duration:45, progress:0,
-      custom:{ info:'KYC/KYB, Legal docs, Financial assessment, etc.'} },
-    { id:'close',   name:'Closing & Signing',             duration: 5, progress:0,
-      custom:{ info:'Signing of legal docs and capital call'} },
-    { id:'capital', name:'Capital Call',                  duration: 5, progress:0,
-      custom:{ info:'Funds wired within few days'} }
-  ];
+  ;(function () {
+    /* ──────────────────────────────────────────────────────────────────────────
+      1 · Date-format helper
+    ─────────────────────────────────────────────────────────────────────────── */
+    const today = new Date();
+    const fmt   = d => d.toISOString().slice(0, 10);   // "YYYY-MM-DD"
 
-  // Build actual start/end dates (“io” + “qna” parallel)
-  let cur = new Date(today);
-  let ioStart;
-  const tasks = taskDefs.map(t => {
-    let s, e;
-    if (t.id === 'prep') {
-      s = new Date(cur);
-      e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
-      cur = new Date(e); cur.setDate(cur.getDate() + 1);
-    } else if (t.id === 'io') {
-      s = new Date(cur);
-      e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
-      ioStart = new Date(s);
-    } else if (t.id === 'qna') {
-      s = new Date(ioStart);
-      e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
-      const ioEnd = new Date(ioStart);
-      ioEnd.setDate(ioEnd.getDate() + taskDefs.find(x => x.id === 'io').duration - 1);
-      cur = new Date(Math.max(e, ioEnd));
-      cur.setDate(cur.getDate() + 1);
-    } else {
-      s = new Date(cur);
-      e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
-      cur = new Date(e); cur.setDate(cur.getDate() + 1);
-    }
-    return {
-      id:       t.id,
-      name:     t.name,
-      start:    fmt(s),
-      end:      fmt(e),
-      progress: t.progress,
-      custom:   t.custom
-    };
-  });
+    /* ──────────────────────────────────────────────────────────────────────────
+      2 · Task definitions (unchanged)
+    ─────────────────────────────────────────────────────────────────────────── */
+    const taskDefs = [
+      { id:'prep',    name:'Deck & Data Room Prep',        duration:14, progress:0,
+        custom:{ info:'Finalize internal assessment, narrative and data pack'} },
+      { id:'io',      name:'Investor Outreach',             duration:10, progress:0,
+        custom:{ info:'Warm Intros, Data Room Access and Management Calls'} },
+      { id:'qna',     name:'Investor Analysis & Q&A',      duration:25, progress:0,
+        custom:{ info:'Investor Assessment & Q&A'} },
+      { id:'ts',      name:'Term-Sheet Negotiation',        duration:10, progress:0,
+        custom:{ info:'Amount, Pricing, Covenants and Securities'} },
+      { id:'approv',  name:'Final Approvals',               duration: 5, progress:0,
+        custom:{ info:'Board and Shareholder approvals'} },
+      { id:'dd',      name:'Legal & Financial Due Diligence   ', duration:40, progress:0,
+        custom:{ info:'KYC/KYB, Legal docs, Financial assessment, etc.'} },
+      { id:'close',   name:'Closing & Signing',             duration: 5, progress:0,
+        custom:{ info:'Signing of legal docs and capital call'} },
+      { id:'capital', name:'Capital Call',                  duration: 5, progress:0,
+        custom:{ info:'Funds wired within few days'} }
+    ];
 
-  /* ──────────────────────────────────────────────────────────────────────────
-     3 · Initialize on DOMContentLoaded
-  ─────────────────────────────────────────────────────────────────────────── */
-  document.addEventListener('DOMContentLoaded', () => {
-    // Lock grid to first/last task dates
-    const firstDate = tasks.reduce((a, t) => (t.start < a ? t.start : a), tasks[0].start);
-    const lastDate  = tasks.reduce((a, t) => (t.end   > a ? t.end   : a), tasks[0].end);
-    
+    // Build actual start/end dates (“io” + “qna” parallel)
+    let cur = new Date(today);
+    let ioStart;
+    const tasks = taskDefs.map(t => {
+      let s, e;
+      if (t.id === 'prep') {
+        s = new Date(cur);
+        e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
+        cur = new Date(e); cur.setDate(cur.getDate() + 1);
+      } else if (t.id === 'io') {
+        s = new Date(cur);
+        e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
+        ioStart = new Date(s);
+      } else if (t.id === 'qna') {
+        s = new Date(ioStart);
+        e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
+        const ioEnd = new Date(ioStart);
+        ioEnd.setDate(ioEnd.getDate() + taskDefs.find(x => x.id === 'io').duration - 1);
+        cur = new Date(Math.max(e, ioEnd));
+        cur.setDate(cur.getDate() + 1);
+      } else {
+        s = new Date(cur);
+        e = new Date(s); e.setDate(e.getDate() + t.duration - 1);
+        cur = new Date(e); cur.setDate(cur.getDate() + 1);
+      }
+      return {
+        id:       t.id,
+        name:     t.name,
+        start:    fmt(s),
+        end:      fmt(e),
+        progress: t.progress,
+        custom:   t.custom
+      };
+    });
 
-    const gantt = new Gantt('#gantt-target', tasks, {
-      /* Month view: one column = a calendar month */
-      view_mode   : 'Month',
-
-      /* 350px per month → 3 months ≈ 1050px (matches container CSS) */
-      column_width: 350,
-
-      /* Fix the grid exactly from firstDate to lastDate */
-      start_date: firstDate,
-      end_date  : lastDate,
-
+    /* ──────────────────────────────────────────────────────────────────────────
+      3 · Initialize on DOMContentLoaded
+    ─────────────────────────────────────────────────────────────────────────── */
+    document.addEventListener('DOMContentLoaded', () => {
+      // Lock grid to first/last task dates
+      const firstDate = tasks.reduce((a, t) => (t.start < a ? t.start : a), tasks[0].start);
+      const lastDate  = tasks.reduce((a, t) => (t.end   > a ? t.end   : a), tasks[0].end);
+      
       /* Disable all editing/dragging */
-      readonly:          true,
-      readonly_dates:    true,
-      readonly_progress: true,
-      draggable:         false,
+      let draggable = isMobile ? true : false;
+      let column_width = isMobile ? 50 : 350;
+      let padding = isMobile ? 6 : 18;
 
-      /* Show pop-up on hover (not click) */
-      // popup_trigger: 'click',
+      const gantt = new Gantt('#gantt-target', tasks, {
+        /* Month view: one column = a calendar month */
+        view_mode   : 'Month',
 
-      /* Optional: keep Day/Week/Year in dropdown if you want */
-      view_modes: ['Day', 'Week', 'Month', 'Year'],
+        /* Fix the grid exactly from firstDate to lastDate */
+        start_date: firstDate,
+        end_date  : lastDate,
 
-      /* Custom pop-up HTML (unchanged) */
-      custom_popup_html: function(task) {
-        return `
-          <div class="details-container">
-            <h5>${task.name}</h5>
-            <p>${task.custom.info}</p>
-            <p>
-              <strong>${task._start.toLocaleDateString()}</strong>
-              &nbsp;➜&nbsp;
-              <strong>${task._end.toLocaleDateString()}</strong>
-            </p>
-          </div>
-        `;
-      },
+        readonly:           true,
+        readonly_dates:     true,
+        readonly_progress:  true,
+        draggable:          draggable,
+        column_width:       column_width,
+        padding:            padding,
 
-      /* No-op handlers as extra precaution */
-      on_click          : () => {},
-      on_date_change    : () => {},
-      on_progress_change: () => {}
-    });
+        /* Show pop-up on hover (not click) */
+        // popup_trigger: 'click',
 
-    /* ────────────────────────────────
-      Fake-click once to "prime" popup system
-    ──────────────────────────────── */
-    setTimeout(() => {
-      const bars = document.querySelectorAll('.bar-wrapper');
-    
-      // Simulate click once to "prime" Frappe Gantt's popup system
-      const firstBar = bars[0];
-      if (firstBar) {
-        firstBar.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-        gantt.hide_popup();
+        /* Optional: keep Day/Week/Year in dropdown if you want */
+        view_modes: ['Day', 'Week', 'Month', 'Year'],
+
+        /* Custom pop-up HTML (unchanged) */
+        custom_popup_html: function(task) {
+          return `
+            <div class="details-container">
+              <h5>${task.name}</h5>
+              <p>${task.custom.info}</p>
+              <p class="task-dates">
+                <strong>${task._start.toLocaleDateString()}</strong>
+                &nbsp;➜&nbsp;
+                <strong>${task._end.toLocaleDateString()}</strong>
+              </p>
+            </div>
+          `;
+        },
+
+        /* No-op handlers as extra precaution */
+        on_click          : () => {},
+        on_date_change    : () => {},
+        on_progress_change: () => {}
       }
     
-      // Track open state
-      let popupOpenId = null;
     
-      bars.forEach(bar => {
-        const taskId = bar.getAttribute('data-id');
-    
-        if (!taskId) return;
-    
-        const task = gantt.get_task(taskId);
-    
-        // 🖱️ Desktop: Hover in/out
-        bar.addEventListener('mouseenter', () => {
-          console.log('mouseenter', taskId);
-          if (!isTouchDevice()) {
-            gantt.show_popup({ task, target_element: bar });
-            popupOpenId = taskId;
+    );
 
-            // Immediately reposition if it would overflow below
-            requestAnimationFrame(() => {
-              const popup = document.querySelector('.popup-wrapper');
-              if (!popup) return;
+      /* ──────────────────────────────────────────────────────────────────────────────
+        Adjust svg column width via monkey-patching
+        ────────────────────────────────────────────────────────────────────────────── */
+      
+      // Now we “fix” the SVG so that everything is scaled down:
+      if (isMobile) {
+        setTimeout(() => {
+        // 1) Grab the <svg> that Gantt just inserted
+        const svg = document.querySelector('#gantt-target svg');
+        if (!svg) return;
 
-              const rect = popup.getBoundingClientRect();
-              const containerRect = document
-                .getElementById('gantt-target')
-                .getBoundingClientRect();
+        // 2) Compute its intrinsic bounding‐box (in SVG user‐units)
+        //    Note: getBBox() measures the union of all child elements’ extents.
+        const bbox = svg.getBBox();
+        const intrinsicWidth  = bbox.width;
+        const intrinsicHeight = bbox.height;
+        console.log('intrinsicWidth', intrinsicWidth);
+        console.log('intrinsicHeight', intrinsicHeight);
 
-              console.log('rect', rect);
-              console.log('containerRect', containerRect);
+        // Define useful constant
+        const ganttWidth = 300;
 
-              // If the popup's bottom edge goes beyond viewport bottom, flip it up:
-              if (rect.bottom > containerRect.bottom) {
-                // Determine how much to move up: 
-                // 1) popup’s height 
-                // 2) plus the bar’s height (so it doesn’t cover the bar)
-                const popupHeight = rect.height;
-                const barRect = bar.getBoundingClientRect();
-                const barHeight = barRect.height;
+        // 3) Give the SVG a viewBox that matches exactly its “real” content bounds:
+        //    viewBox="0 0 [intrinsicWidth] [intrinsicHeight]"
+        svg.setAttribute('viewBox', `${ganttWidth * 2} 0 ${ganttWidth * 2} ${intrinsicHeight}`);
 
-                // Current top (px) as a number:
-                const currentTop = parseFloat(popup.style.top || 0);
+        // 4) Now reduce the <svg> to whatever final pixel width you want (e.g. 300px).
+        //    The browser will automatically scale the entire chart down to fit.
+        svg.setAttribute('width', ganttWidth);
 
-                // Move the popup higher and to the left
-                popup.style.top = (currentTop - popupHeight/2 - barHeight) + 'px';
-                popup.style.left = (barRect.left - popup.offsetWidth/1.5) + 'px';
-              }
-            });
-          }
-        });
-        bar.addEventListener('mouseleave', () => {
-          console.log('mouseleave', taskId);
-          if (!isTouchDevice()) {
-            gantt.hide_popup();
-            popupOpenId = null;
-          }
-        });
-    
-        // 📱 Mobile: Tap once to show, tap again to close
-        bar.addEventListener('click', e => {
-          if (isTouchDevice()) {
-            e.stopPropagation(); // prevent bubbling to document
-            if (popupOpenId === taskId) {
-              gantt.hide_popup();
-              popupOpenId = null;
-            } else {
-              gantt.show_popup(task);
-              popupOpenId = taskId;
-            }
-          }
-        });
-      });
-    
-      // 📱 Mobile: Tap outside to hide
-      document.addEventListener('click', e => {
-        if (popupOpenId && isTouchDevice()) {
-          const popup = document.querySelector('.details-container');
-          if (popup && !popup.contains(e.target)) {
-            gantt.hide_popup();
-            popupOpenId = null;
-          }
+        // 5) Remove any hard‐coded height attribute so that height is scaled
+        //    proportionally (viewBox preserves aspect ratio by default).
+        svg.removeAttribute('height');
+        svg.style.height = 'auto';
+
+        // Find the <g class="grid"> group that contains <rect class="grid-background">,Rows,Header,etc.
+        const dateGroup = svg.querySelector('g.date');
+        if (dateGroup) {
+          // Push it down by, say, 7px so the first row moves from y=53 → y=60
+          dateGroup.setAttribute('transform', 'translate(0, -7)');
         }
-      });
-    
-      // Helper to detect touch devices
-      function isTouchDevice() {
-        return window.matchMedia('(pointer: coarse)').matches;
+        const gridHeader = svg.querySelector('rect.grid-header');
+        if (gridHeader) {
+          gridHeader.setAttribute('height', 50);
+        }
+        // 6) If you’d prefer “shrink‐to‐fit” inside #gantt-target, you can also force:
+        //    svg.style.maxWidth = '100%';
+        //    svg.style.height   = 'auto';
+
+        // 7) Optionally, allow horizontal scroll if you want a scrollable 300px‐canvas:
+        const wrapper = document.getElementById('gantt-target');
+        if (wrapper) {
+          wrapper.style.overflowX = 'auto';
+          wrapper.style.overflowY = 'hidden';
+        }
+
+        hidePopupWrapper();
+      }, 0);
+    }
+
+      /* ────────────────────────────────
+        Implement the popup system
+      ──────────────────────────────── */
+       // Helper to detect touch devices
+      // Helper: detect touch‐device (mobile/tablet)
+function isTouchDevice() {
+  return window.matchMedia('(pointer: coarse)').matches;
+}
+
+// ────────────────────────────────────────────────────────────────
+// Hide the popup by adding our “hidden” class (so it goes offscreen).
+// Must be called *after* gantt.hide_popup().
+// ────────────────────────────────────────────────────────────────
+function hidePopupWrapper() {
+  const wrapper = document.querySelector('.popup-wrapper');
+  if (!wrapper) return;
+  wrapper.classList.add('hidden');
+}
+
+// ────────────────────────────────────────────────────────────────
+// Show and position the popup over (or centered in) #gantt-target.
+// Must be called *after* gantt.show_popup({ task, target_element: bar }).
+// ────────────────────────────────────────────────────────────────
+function showPopupWrapper(barElement) {
+  const wrapper = document.querySelector('.popup-wrapper');
+  const container = document.getElementById('gantt-target');
+  if (!wrapper || !container) return;
+
+  // Unhide the wrapper (it should already have .hidden)
+  wrapper.classList.remove('hidden');
+  // Make sure it’s invisible & non-interactive until we position it:
+  wrapper.style.opacity       = '0';
+  wrapper.style.pointerEvents = 'none';
+
+  // Next animation frame: measure and position
+  requestAnimationFrame(() => {
+    // Measure the popup’s size:
+    const popupRect     = wrapper.getBoundingClientRect();
+    const containerRect = container.getBoundingClientRect();
+
+    let left, top;
+
+    if (isTouchDevice()) {
+      // ─────────── Mobile: truly center inside the container ───────────
+      left = (containerRect.width - popupRect.width) / 2;
+      top  = (containerRect.height - popupRect.height) / 2;
+      // We position relative to container’s top-left, so no +containerRect offsets
+    } else {
+      // ─────────── Desktop: “above/below bar” ───────────
+      // If the popup's bottom edge goes beyond viewport bottom, flip it up:
+      if (popupRect.bottom > containerRect.bottom) {
+        const popupHeight = popupRect.height;
+        const barRect = barElement.getBoundingClientRect();
+        const barHeight = barRect.height;
+
+        // Current top (px) as a number:
+        const currentTop = parseFloat(wrapper.style.top || 0);
+
+        // Move the popup higher and to the left
+        wrapper.style.top = (currentTop - popupHeight/2 - barHeight) + 'px';
+        wrapper.style.left = (barRect.left - wrapper.offsetWidth/1.5) + 'px';
+      }
+    }
+
+    // 3) Apply the inline styles and finally show it
+    wrapper.style.left          = left + 'px';
+    wrapper.style.top           = top  + 'px';
+    wrapper.style.opacity       = '1';
+    wrapper.style.pointerEvents = 'auto';
+  });
+}
+
+
+// ────────────────────────────────────────────────────────────────
+// Prime + hover/tap logic (drop-in replacement).
+// ────────────────────────────────────────────────────────────────
+setTimeout(() => {
+  const bars = document.querySelectorAll('.bar-wrapper');
+  if (!bars.length) return;
+
+  // Prime Gantt’s popup system once
+  bars[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  gantt.hide_popup();
+  hidePopupWrapper();
+
+  let popupOpenId = null;
+
+  bars.forEach(bar => {
+    const taskId = bar.getAttribute('data-id');
+    if (!taskId) return;
+    const task = gantt.get_task(taskId);
+
+    // ─── Desktop: Hover in/out ──────────────────────────
+    bar.addEventListener('mouseenter', () => {
+      if (!isTouchDevice()) {
+        gantt.show_popup({ task, target_element: bar });
+        showPopupWrapper(bar);
+        popupOpenId = taskId;
       }
     });
-    
+    bar.addEventListener('mouseleave', () => {
+      if (!isTouchDevice()) {
+        gantt.hide_popup();
+        hidePopupWrapper();
+        popupOpenId = null;
+      }
+    });
 
-    /* ────────────────────────────────────────────────────────────────────────
-       4 · Trim whitespace below bars by resizing SVG to its content height
-       ──────────────────────────────────────────────────────────────────────── */
-    setTimeout(() => {
-      const svg = document.querySelector('#gantt-target svg');
-      if (!svg) return;
-      const bbox = svg.getBBox();
-      svg.setAttribute('height', bbox.height);
-      document.getElementById('gantt-target').style.height = bbox.height + 'px';
-    }, 0);
+    // ─── Mobile: Tap to toggle ─────────────────────────
+    bar.addEventListener('click', e => {
+      if (!isTouchDevice()) return;
+      e.stopPropagation();
 
-    /* ────────────────────────────────────────────────────────────────────────
-       5 · Prevent horizontal scroll/pan on wheel or touch
-       ──────────────────────────────────────────────────────────────────────── */
-    const ganttTarget = document.getElementById('gantt-target');
-    if (ganttTarget) {
-      ganttTarget.addEventListener(
-        'wheel',
-        e => {
-          if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.preventDefault();
-        },
-        { passive: false }
-      );
+      if (popupOpenId === taskId) {
+        // Already open → hide
+        gantt.hide_popup();
+        hidePopupWrapper();
+        popupOpenId = null;
+        return;
+      }
 
-      let lastTouchX = null;
-      ganttTarget.addEventListener('touchstart', e => {
-        if (e.touches.length === 1) lastTouchX = e.touches[0].clientX;
-      });
-      ganttTarget.addEventListener(
-        'touchmove',
-        e => {
-          if (e.touches.length === 1 && lastTouchX !== null) {
-            const deltaX = e.touches[0].clientX - lastTouchX;
-            if (Math.abs(deltaX) > 0) e.preventDefault();
-          }
-        },
-        { passive: false }
-      );
+      // Otherwise: show & reposition
+      gantt.show_popup({ task, target_element: bar });
+      showPopupWrapper(bar);
+      popupOpenId = taskId;
+    });
+  });
+
+  // Tap outside to hide (mobile only)
+  document.addEventListener('click', e => {
+    if (popupOpenId && isTouchDevice()) {
+      const details = document.querySelector('.details-container');
+      if (details && !details.contains(e.target)) {
+        gantt.hide_popup();
+        hidePopupWrapper();
+        popupOpenId = null;
+      }
     }
   });
-})();
+});
+
+
+      
+
+      /* ────────────────────────────────────────────────────────────────────────
+        4 · Trim whitespace below bars by resizing SVG to its content height
+        ──────────────────────────────────────────────────────────────────────── */
+      setTimeout(() => {
+        const svg = document.querySelector('#gantt-target svg');
+        if (!svg || isMobile) return;
+        const bbox = svg.getBBox();
+        svg.setAttribute('height', bbox.height);
+        document.getElementById('gantt-target').style.height = bbox.height + 'px';
+      }, 0);
+
+      /* ────────────────────────────────────────────────────────────────────────
+        5 · Prevent horizontal scroll/pan on wheel or touch
+        ──────────────────────────────────────────────────────────────────────── */
+      const ganttTarget = document.getElementById('gantt-target');
+      if (ganttTarget) {
+        ganttTarget.addEventListener(
+          'wheel',
+          e => {
+            if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.preventDefault();
+          },
+          { passive: false }
+        );
+
+        let lastTouchX = null;
+        ganttTarget.addEventListener('touchstart', e => {
+          if (e.touches.length === 1) lastTouchX = e.touches[0].clientX;
+        });
+        ganttTarget.addEventListener(
+          'touchmove',
+          e => {
+            if (e.touches.length === 1 && lastTouchX !== null) {
+              const deltaX = e.touches[0].clientX - lastTouchX;
+              if (Math.abs(deltaX) > 0) e.preventDefault();
+            }
+          },
+          { passive: false }
+        );
+      }
+    });
+  })();

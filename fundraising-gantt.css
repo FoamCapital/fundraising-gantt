@@ -2,9 +2,20 @@
     --primary: #35898b; /* Foam Capital teal */
     --text-dark: #0a1e32; /* Navy headings / copy */
   }
+
+  /*––––  ROW STRIPING  ––––*/
+.grid-row:nth-child(odd) {
+    fill: #fff !important;
+  }
+  
+  .grid-row:nth-child(even) {
+    fill: var(--primary) !important;
+    opacity: 0.1; /* adjust for subtle tint */
+  }
   
   /*––––  WRAPPER  ––––*/
   #gantt-target {
+    width: 100%;
     max-width: 800px;
     overflow-x: hidden;
     overflow-y: hidden;
@@ -12,6 +23,23 @@
     border-radius: 12px;
     touch-action: none;   /* disable touch‐drag panning */
     -ms-touch-action: none;
+  }
+
+  /*––––  Adjust upper and lower texts  ––––*/
+  .upper-text {
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    fill: var(--primary) !important;
+  }
+  .lower-text {
+    font-size: 0.8rem !important;
+    fill: var(--text-dark) !important;
+  }
+
+  .task-dates {
+    font-size: 0.8rem !important;
+    color: var(--primary) !important;
+    margin-top: 8px !important;
   }
   
   /*––––  BAR & PROGRESS  ––––*/
@@ -32,7 +60,7 @@
     pointer-events: auto;
   }
   .details-container h5 {
-    margin: 0 0 0.25rem;
+    margin: 0 0 0.5rem;
     font-weight: 600;
     font-size: 0.9rem;
     color: var(--text-dark);
@@ -51,8 +79,14 @@
     pointer-events: none; /* keep bars clickable */
   }
 
+  /*––––  Hide the popup-wrapper background  ––––*/
+  .popup-wrapper {
+    background: none !important;
+  }
+
+
   /* ──────────────────────────────────────────────────────────────────────────
-   Hide the drag handles entirely (so users can’t grab/resize bars).
+   Hide the drag handles entirely (so users can't grab/resize bars).
 ────────────────────────────────────────────────────────────────────────── */
 #gantt-target .handle-group {
     display: none !important;
@@ -62,40 +96,90 @@
     display: none !important;
 }
 
+.popup-wrapper {
+  position: absolute;       /* so left/top actually move it */
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.15s ease-in-out;
+  /* (no default left/top here; JS will set them when showing) */
+}
+
+/* When hidden, push it off‐screen and disable clicks */
+.popup-wrapper.hidden {
+  left:  -9999px !important;
+  top:   -9999px !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* when Gantt injects a visible popup, it sets opacity:1 on .popup-wrapper */
+.popup-wrapper .details-container {
+  pointer-events: auto; /* allow taps on the details card itself */
+}
+
 /*─────────────────────────────────────────────────────────────────────────────
   Mobile‐responsive tweaks: increase bar‐height and font‐sizes on small
   screens so users on phones/tablets see larger, tap‐friendly elements.
 ──────────────────────────────────────────────────────────────────────────────*/
 
 /* When the container is narrower than 600px (adjust as needed): */
-@media (max-width: 600px) {
-    /* 1) Grow the bars by 1.5× via a vertical scale */
-    rect.bar,
-    rect.bar-progress {
-      transform: scaleY(1.5) !important;
-      transform-origin: center;
-    }
-  
-    /* 2) Push the bar‐group down slightly so the taller bars don’t overlap grid lines */
-    .bar-group {
-      transform: translateY(3px);
-    }
-  
-    /* 3) Increase label text on the bars */
-    .bar-label {
-      font-size: 0.85rem !important;
-    }
-  
-    /* 4) Make pop‐up card text bigger and more tappable */
-    .details-container {
-      min-width: 200px;
-      padding: 1rem 1.25rem;
-    }
-    .details-container h5 {
-      font-size: 1.1rem !important;
-    }
-    .details-container p {
-      font-size: 0.9rem !important;
-      line-height: 1.4;
-    }
+@media (max-width: 1000px) {
+    
+     /* 1) Let the container scroll on small screens */
+  #gantt-target {
+    overflow-x: auto !important;      /* allow horizontal scroll on phones/tablets */
+    overflow-y: hidden;
+    /* override any hard-capped width if you like */
+    max-width: 100%;        /* ensure it never exceeds viewport width */
+    height: auto !important;
+    padding-bottom: 0.3rem;   /* optional: give a bit of breathing room */
+    touch-action: auto !important;   /* activate touch‐drag panning */
+    -ms-touch-action: auto !important;
   }
+
+  #gantt-target svg { width: 100% !important; height: auto !important; }
+
+  .gantt-container {
+    font-size: 8px !important;
+  }
+
+  /* Mobile-specific bar height reductions */
+  .grid-row {
+      height: 25px !important; /* Reduced from 5px to 25px for actual row height */
+  }
+  
+  .bar-wrapper {
+      height: 6px !important; /* Reduce wrapper height */
+  }
+  
+  .bar, 
+  .bar-progress {
+      height: 14px !important; /* Reduce progress bar height */
+  }
+
+  /* 4) Make pop‐up card text bigger and more tappable */
+  .details-container {
+    min-width: 150px;
+    padding: 1rem 1.25rem;
+  }
+  .details-container h5 {
+    font-size: 0.8rem !important;
+  }
+  .details-container p {
+    font-size: 0.7rem !important;
+    /* line-height: 1.4; */
+  }
+
+  .upper-text,
+  .lower-text {
+      font-size: 0.7rem !important;
+  }
+
+  .bar-label {
+      font-size: 0.7rem !important;
+  }
+
+  .task-dates {
+      font-size: 1rem !important;
+  }
+}
