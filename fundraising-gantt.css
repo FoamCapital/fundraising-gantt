@@ -1,5 +1,6 @@
 :root {
     --primary: #35898b; /* Foam Capital teal */
+    --primary-light: #cce2e2; /* Foam Capital teal */
     --text-dark: #0a1e32; /* Navy headings / copy */
   }
 
@@ -9,8 +10,7 @@
   }
   
   .grid-row:nth-child(even) {
-    fill: var(--primary) !important;
-    opacity: 0.1; /* adjust for subtle tint */
+    fill: var(--primary-light) !important;
   }
   
   /*––––  WRAPPER  ––––*/
