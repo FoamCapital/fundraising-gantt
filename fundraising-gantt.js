@@ -229,7 +229,7 @@ function showPopupWrapper(barElement) {
     const popupRect     = wrapper.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
 
-    let left, top;
+    let leftWrapper, topWrapper;
     console.log('popupRect', popupRect);
     console.log('containerRect', containerRect);
     const barRect = barElement.getBoundingClientRect();
@@ -239,37 +239,39 @@ function showPopupWrapper(barElement) {
       const popupHeight = popupRect.height;
       const barRect = barElement.getBoundingClientRect();
       const barHeight = barRect.height;
+      const barRectHCenter = barRect.left + (barRect.right - barRect.left)/2
 
       // Calculate top position
-      top = barRect.top - containerRect.top - popupHeight - 10; // 10px gap above the bar
+      topWrapper = barRect.top - containerRect.top - popupHeight - 10; // 10px gap above the bar
 
       // If the popup would go above the container, position it below the bar
-      if (top < 0) {
-        top = barRect.bottom - containerRect.top + 10; // 10px gap below the bar
+      if (topWrapper < 0) {
+        topWrapper = barRect.bottom - containerRect.top + 10; // 10px gap below the bar
       }
 
       // Calculate left position to center the popup over the bar
-      let newLeft = barRect.left - containerRect.left/2 + (barRect.width);
+      let newLeft = barRectHCenter + containerRect.left
       console.log('newLeft', newLeft);
       // Clamp so we never spill off the left edge:
       if (newLeft < 0) newLeft = 10; // Small margin from left edge
 
       // And clamp off the right edge:
-      if (newLeft + popupRect.width > containerRect.width + containerRect.left) {
-        newLeft = containerRect.width - popupRect.width - 10; // Small margin from right edge
-      }
+      // if (newLeft + popupRect.width > containerRect.width + containerRect.left) {
+      //   newLeft = containerRect.right - popupRect.width/2 - 10; // Small margin from right edge
+      // }
 
-      left = newLeft;
-      console.log('left', left);
-      console.log('top', top);
+      leftWrapper = newLeft;
+      console.log('leftWrapper', leftWrapper);
+      console.log('topWrapper', topWrapper );
+      console.log('barRectHCenter', barRectHCenter);
       console.log('popupRect', popupRect);
       console.log('barRect', barRect);
       console.log('containerRect', containerRect);
     }
 
     // 3) Apply the inline styles and finally show it
-    wrapper.style.left          = left + 'px';
-    wrapper.style.top           = top  + 'px';
+    wrapper.style.left          = leftWrapper + 'px';
+    wrapper.style.top           = topWrapper  + 'px';
     wrapper.style.opacity       = '1';
     wrapper.style.pointerEvents = 'auto';
   });
