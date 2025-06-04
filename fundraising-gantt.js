@@ -5,7 +5,7 @@
   */
 
   // Check if is mobile
-  const isMobile = window.innerWidth < 600;
+  const isMobile = window.innerWidth < 1000;
 
   ;(function () {
     /* ──────────────────────────────────────────────────────────────────────────
