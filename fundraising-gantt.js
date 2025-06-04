@@ -133,7 +133,7 @@
         Adjust svg column width via monkey-patching
         ────────────────────────────────────────────────────────────────────────────── */
       
-      // Now we “fix” the SVG so that everything is scaled down:
+      // Now we "fix" the SVG so that everything is scaled down:
       if (isMobile) {
         setTimeout(() => {
         // 1) Grab the <svg> that Gantt just inserted
@@ -141,7 +141,7 @@
         if (!svg) return;
 
         // 2) Compute its intrinsic bounding‐box (in SVG user‐units)
-        //    Note: getBBox() measures the union of all child elements’ extents.
+        //    Note: getBBox() measures the union of all child elements' extents.
         const bbox = svg.getBBox();
         const intrinsicWidth  = bbox.width;
         const intrinsicHeight = bbox.height;
@@ -151,7 +151,7 @@
         // Define useful constant
         const ganttWidth = 300;
 
-        // 3) Give the SVG a viewBox that matches exactly its “real” content bounds:
+        // 3) Give the SVG a viewBox that matches exactly its "real" content bounds:
         //    viewBox="0 0 [intrinsicWidth] [intrinsicHeight]"
         svg.setAttribute('viewBox', `${ganttWidth * 2} 0 ${ganttWidth * 2} ${intrinsicHeight}`);
 
@@ -174,7 +174,7 @@
         if (gridHeader) {
           gridHeader.setAttribute('height', 50);
         }
-        // 6) If you’d prefer “shrink‐to‐fit” inside #gantt-target, you can also force:
+        // 6) If you'd prefer "shrink‐to‐fit" inside #gantt-target, you can also force:
         //    svg.style.maxWidth = '100%';
         //    svg.style.height   = 'auto';
 
@@ -199,7 +199,7 @@ function isTouchDevice() {
 }
 
 // ────────────────────────────────────────────────────────────────
-// Hide the popup by adding our “hidden” class (so it goes offscreen).
+// Hide the popup by adding our "hidden" class (so it goes offscreen).
 // Must be called *after* gantt.hide_popup().
 // ────────────────────────────────────────────────────────────────
 function hidePopupWrapper() {
@@ -219,38 +219,48 @@ function showPopupWrapper(barElement) {
 
   // Unhide the wrapper (it should already have .hidden)
   wrapper.classList.remove('hidden');
-  // Make sure it’s invisible & non-interactive until we position it:
+  // Make sure it's invisible & non-interactive until we position it:
   wrapper.style.opacity       = '0';
   wrapper.style.pointerEvents = 'none';
 
   // Next animation frame: measure and position
   requestAnimationFrame(() => {
-    // Measure the popup’s size:
+    // Measure the popup's size:
     const popupRect     = wrapper.getBoundingClientRect();
     const containerRect = container.getBoundingClientRect();
 
     let left, top;
 
-    if (isTouchDevice()) {
-      // ─────────── Mobile: truly center inside the container ───────────
-      left = (containerRect.width - popupRect.width) / 2;
-      top  = (containerRect.height - popupRect.height) / 2;
-      // We position relative to container’s top-left, so no +containerRect offsets
-    } else {
-      // ─────────── Desktop: “above/below bar” ───────────
-      // If the popup's bottom edge goes beyond viewport bottom, flip it up:
-      if (popupRect.bottom > containerRect.bottom) {
-        const popupHeight = popupRect.height;
-        const barRect = barElement.getBoundingClientRect();
-        const barHeight = barRect.height;
+    if (popupRect.bottom > containerRect.bottom) {
+      const popupHeight = popupRect.height;
+      const barRect = barElement.getBoundingClientRect();
+      const barHeight = barRect.height;
 
-        // Current top (px) as a number:
-        const currentTop = parseFloat(wrapper.style.top || 0);
+      // Calculate top position
+      top = barRect.top - containerRect.top - popupHeight - 10; // 10px gap above the bar
 
-        // Move the popup higher and to the left
-        wrapper.style.top = (currentTop - popupHeight/2 - barHeight) + 'px';
-        wrapper.style.left = (barRect.left - wrapper.offsetWidth/1.5) + 'px';
+      // If the popup would go above the container, position it below the bar
+      if (top < 0) {
+        top = barRect.bottom - containerRect.top + 10; // 10px gap below the bar
       }
+
+      // Calculate left position to center the popup over the bar
+      let newLeft = barRect.left - containerRect.left/2 + (barRect.width);
+      console.log('newLeft', newLeft);
+      // Clamp so we never spill off the left edge:
+      if (newLeft < 0) newLeft = 10; // Small margin from left edge
+
+      // And clamp off the right edge:
+      if (newLeft + popupRect.width > containerRect.width + containerRect.left) {
+        newLeft = containerRect.width - popupRect.width - 10; // Small margin from right edge
+      }
+
+      left = newLeft;
+      console.log('left', left);
+      console.log('top', top);
+      console.log('popupRect', popupRect);
+      console.log('barRect', barRect);
+      console.log('containerRect', containerRect);
     }
 
     // 3) Apply the inline styles and finally show it
@@ -269,7 +279,7 @@ setTimeout(() => {
   const bars = document.querySelectorAll('.bar-wrapper');
   if (!bars.length) return;
 
-  // Prime Gantt’s popup system once
+  // Prime Gantt's popup system once
   bars[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
   gantt.hide_popup();
   hidePopupWrapper();
