@@ -230,8 +230,12 @@ function showPopupWrapper(barElement) {
     const containerRect = container.getBoundingClientRect();
 
     let left, top;
+    console.log('popupRect', popupRect);
+    console.log('containerRect', containerRect);
+    const barRect = barElement.getBoundingClientRect();
+    console.log('barRect', barRect);
 
-    if (popupRect.bottom > containerRect.bottom) {
+    if (popupRect.bottom > containerRect.bottom || popupRect.right > containerRect.right) {
       const popupHeight = popupRect.height;
       const barRect = barElement.getBoundingClientRect();
       const barHeight = barRect.height;
