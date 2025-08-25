@@ -1,17 +1,19 @@
 /* foam-gantt.js
    Desktop: unchanged.
-   Mobile: fit the whole process (first bar → last bar) with tiny pads,
-           center popup, clamp labels so their END kisses the bar's LEFT.
+   Mobile (Webflow-safe): fit the whole process (first bar → last bar) with tiny pads,
+   center popup, clamp labels so their END kisses the bar's LEFT, and harden SVG sizing.
 */
 
-const isMobile = window.innerWidth < 1000;
+const isMobile =
+  window.matchMedia('(max-width: 1000px)').matches ||
+  window.matchMedia('(pointer: coarse)').matches;
 
 ;(function () {
   /* 1 · Date-format helper */
   const today = new Date();
   const fmt   = d => d.toISOString().slice(0, 10);   // "YYYY-MM-DD"
 
-  /* 2 · Task definitions (unchanged) */
+  /* 2 · Task definitions */
   const taskDefs = [
     { id:'prep',    name:'Deck & Data Room Prep',        duration:14, progress:0,
       custom:{ info:'Finalize internal assessment, narrative and data pack'} },
@@ -68,6 +70,12 @@ const isMobile = window.innerWidth < 1000;
 
   /* 3 · Initialize on DOMContentLoaded */
   document.addEventListener('DOMContentLoaded', () => {
+    // Ensure container is a positioning context for the popup in Webflow
+    const containerEl = document.getElementById('gantt-target');
+    if (containerEl && getComputedStyle(containerEl).position === 'static') {
+      containerEl.style.position = 'relative';
+    }
+
     // Lock grid to first/last task dates
     const firstDate = tasks.reduce((a, t) => (t.start < a ? t.start : a), tasks[0].start);
     const lastDate  = tasks.reduce((a, t) => (t.end   > a ? t.end   : a), tasks[0].end);
@@ -178,6 +186,13 @@ const isMobile = window.innerWidth < 1000;
         svg.setAttribute('viewBox', `${xOffset} ${yOffset} ${visibleWidth} ${visibleHeight}`);
         svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
 
+        // Webflow-safe SVG sizing: let CSS own the size
+        svg.removeAttribute('width');
+        svg.removeAttribute('height');
+        svg.style.width    = '100%';
+        svg.style.maxWidth = '100%';
+        svg.style.height   = 'auto';
+
         // Header tweaks (as before)
         const dateGroup = svg.querySelector('g.date');
         if (dateGroup) dateGroup.setAttribute('transform', 'translate(0, -7)');
@@ -189,10 +204,6 @@ const isMobile = window.innerWidth < 1000;
             clampLabelsToViewport(svg, xOffset, visibleWidth);
           });
         });
-
-        // Keep height auto for correct aspect (CSS keeps width:100% on mobile)
-        svg.removeAttribute('height');
-        svg.style.height = 'auto';
 
         // Avoid accidental horizontal scroll on mobile
         const wrapper = document.getElementById('gantt-target');
@@ -225,71 +236,67 @@ const isMobile = window.innerWidth < 1000;
       wrapper.classList.add('hidden');
     }
 
-    // Centered on mobile; original behavior on desktop
+    // Centered on mobile; near-bar on desktop with soft clamping
     function showPopupWrapper(barElement) {
       const wrapper   = document.querySelector('.popup-wrapper');
       const container = document.getElementById('gantt-target');
       if (!wrapper || !container) return;
-    
+
       wrapper.classList.remove('hidden');
       wrapper.style.opacity       = '0';
       wrapper.style.pointerEvents = 'none';
-    
+
       requestAnimationFrame(() => {
         const containerRect = container.getBoundingClientRect();
         const barRect       = barElement.getBoundingClientRect();
-    
-        if (window.matchMedia('(pointer: coarse)').matches) {
-          // MOBILE: centered (kept exactly as in your working version, with slight left nudge)
+
+        if (isTouchDevice()) {
+          // MOBILE: centered with tiny left nudge
           const cx = containerRect.left + containerRect.width  / 2;
           const cy = containerRect.top  + containerRect.height / 2;
-          const nudgeLeft = 16;
-    
-          wrapper.style.left      = (cx - nudgeLeft) + 'px';
+          const NUDGE_LEFT = 16;
+
+          wrapper.style.left      = (cx - NUDGE_LEFT) + 'px';
           wrapper.style.top       = cy + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
         } else {
-          // DESKTOP: near-bar position (unchanged)
-          const popupRect    = wrapper.getBoundingClientRect();
-          const popupHeight  = popupRect.height;
-          const barCenterX   = barRect.left + (barRect.right - barRect.left) / 2;
-    
+          // DESKTOP: above (or below) the bar, centered horizontally in container space
+          const popupRect   = wrapper.getBoundingClientRect();
+          const popupHeight = popupRect.height;
+          const barCenterX  = barRect.left + (barRect.width / 2);
+
           let topWrapper  = barRect.top - containerRect.top - popupHeight - 10;
           if (topWrapper < 0) topWrapper = barRect.bottom - containerRect.top + 10;
-    
-          let leftWrapper = barCenterX + containerRect.left;
-          if (leftWrapper < 0) leftWrapper = 10;
-    
+
+          // Position relative to container
+          let leftWrapper = barCenterX - containerRect.left;
+
           wrapper.style.left      = leftWrapper + 'px';
           wrapper.style.top       = topWrapper  + 'px';
           wrapper.style.transform = 'none';
-    
-          // Right-edge clamp (adds a small margin so it never touches the border)
-          const RIGHT_MARGIN = 12; // px breathing room from right edge
-          const LEFT_MARGIN  = 8;  // optional safety on the left
-    
+
+          // Soft clamping with margins
+          const RIGHT_MARGIN = 12;
+          const LEFT_MARGIN  = 8;
+
           const now = wrapper.getBoundingClientRect();
-    
-          // If the popup's right edge would pass the container's right minus margin,
-          // nudge it left by exactly the overshoot amount.
+
           const overshootR = now.right - (containerRect.right - RIGHT_MARGIN);
           if (overshootR > 0) {
             wrapper.style.left = (leftWrapper - overshootR) + 'px';
           }
-    
-          // Also ensure we don’t clip into the left edge (rare, but symmetrical).
+
           const after = wrapper.getBoundingClientRect();
           const overshootL = (containerRect.left + LEFT_MARGIN) - after.left;
           if (overshootL > 0) {
             wrapper.style.left = (parseFloat(wrapper.style.left) + overshootL) + 'px';
           }
         }
-    
+
         wrapper.style.opacity       = '1';
         wrapper.style.pointerEvents = 'auto';
       });
     }
-    
 
     setTimeout(() => {
       const bars = document.querySelectorAll('.bar-wrapper');
@@ -359,7 +366,8 @@ const isMobile = window.innerWidth < 1000;
       if (!svg || isMobile) return;
       const bbox = svg.getBBox();
       svg.setAttribute('height', bbox.height);
-      document.getElementById('gantt-target').style.height = bbox.height + 'px';
+      const tgt = document.getElementById('gantt-target');
+      if (tgt) tgt.style.height = bbox.height + 'px';
     }, 0);
 
     /* 5 · Prevent horizontal pan/scroll gestures */
