@@ -1,35 +1,37 @@
 /* foam-gantt.js
-   Desktop: unchanged.
-   Mobile (Webflow-safe): fit the whole process (first bar → last bar) with tiny pads,
-   center popup, clamp labels so their END kisses the bar's LEFT, and harden SVG sizing.
+   ----------------------------------------------------
+   Desktop: unchanged (hover popup, trim whitespace, no pan).
+   Mobile: crop to first→last bar with small pads, scale down with fixed width,
+           clamp overflowing labels so their END touches the bar's LEFT,
+           and center popup on tap.
+   Must load **after** frappe-gantt.min.js.
 */
 
-const isMobile =
-  window.matchMedia('(max-width: 1000px)').matches ||
-  window.matchMedia('(pointer: coarse)').matches;
+// Mobile = narrow viewport only (match your original that worked)
+const isMobile = window.innerWidth < 600;
 
 ;(function () {
   /* 1 · Date-format helper */
   const today = new Date();
   const fmt   = d => d.toISOString().slice(0, 10);   // "YYYY-MM-DD"
 
-  /* 2 · Task definitions */
+  /* 2 · Task definitions (unchanged) */
   const taskDefs = [
     { id:'prep',    name:'Deck & Data Room Prep',        duration:14, progress:0,
       custom:{ info:'Finalize internal assessment, narrative and data pack'} },
-    { id:'io',      name:'Investor Outreach',             duration:10, progress:0,
+    { id:'io',      name:'Investor Outreach',            duration:10, progress:0,
       custom:{ info:'Warm Intros, Data Room Access and Management Calls'} },
-    { id:'qna',     name:'Investor Analysis & Q&A',       duration:25, progress:0,
+    { id:'qna',     name:'Investor Analysis & Q&A',      duration:25, progress:0,
       custom:{ info:'Investor Assessment & Q&A'} },
-    { id:'ts',      name:'Term-Sheet Negotiation',        duration:10, progress:0,
+    { id:'ts',      name:'Term-Sheet Negotiation',       duration:10, progress:0,
       custom:{ info:'Amount, Pricing, Covenants and Securities'} },
-    { id:'approv',  name:'Final Approvals',               duration: 5, progress:0,
+    { id:'approv',  name:'Final Approvals',              duration: 5, progress:0,
       custom:{ info:'Board and Shareholder approvals'} },
     { id:'dd',      name:'Legal & Financial Due Diligence   ', duration:40, progress:0,
       custom:{ info:'KYC/KYB, Legal docs, Financial assessment, etc.'} },
-    { id:'close',   name:'Closing & Signing',             duration: 5, progress:0,
+    { id:'close',   name:'Closing & Signing',            duration: 5, progress:0,
       custom:{ info:'Signing of legal docs and capital call'} },
-    { id:'capital', name:'Capital Call',                  duration: 5, progress:0,
+    { id:'capital', name:'Capital Call',                 duration: 5, progress:0,
       custom:{ info:'Funds wired within few days'} }
   ];
 
@@ -70,18 +72,14 @@ const isMobile =
 
   /* 3 · Initialize on DOMContentLoaded */
   document.addEventListener('DOMContentLoaded', () => {
-    // Ensure container is a positioning context for the popup in Webflow
-    const containerEl = document.getElementById('gantt-target');
-    if (containerEl && getComputedStyle(containerEl).position === 'static') {
-      containerEl.style.position = 'relative';
-    }
-
     // Lock grid to first/last task dates
     const firstDate = tasks.reduce((a, t) => (t.start < a ? t.start : a), tasks[0].start);
     const lastDate  = tasks.reduce((a, t) => (t.end   > a ? t.end   : a), tasks[0].end);
 
-    const column_width = isMobile ? 50 : 350;
-    const padding      = isMobile ? 6  : 18;
+    // Keep your original toggles
+    const draggable    = isMobile ? true : false;
+    const column_width = isMobile ? 50   : 350;
+    const padding      = isMobile ? 6    : 18;
 
     const gantt = new Gantt('#gantt-target', tasks, {
       view_mode  : 'Month',
@@ -91,10 +89,9 @@ const isMobile =
       readonly:           true,
       readonly_dates:     true,
       readonly_progress:  true,
-      draggable:          false,
-
-      column_width,
-      padding,
+      draggable:          draggable,
+      column_width:       column_width,
+      padding:            padding,
 
       view_modes: ['Day', 'Week', 'Month', 'Year'],
 
@@ -117,15 +114,16 @@ const isMobile =
       on_progress_change: () => {}
     });
 
-    // ─────────────────────────────────────────────────────────
-    // MOBILE-ONLY viewport + label clamping
-    // ─────────────────────────────────────────────────────────
+    /* ─────────────────────────────────────────────────────────
+       MOBILE-ONLY: viewport crop + fixed pixel width + label clamp
+       (replaces the old "ganttWidth*2" hack)
+    ───────────────────────────────────────────────────────── */
     if (isMobile) {
       setTimeout(() => {
         const svg = document.querySelector('#gantt-target svg');
         if (!svg) return;
 
-        // Month width from header (median spacing)
+        // 1) Month width from header (median spacing)
         const monthXs = Array.from(svg.querySelectorAll('g.date text.lower-text'))
           .map(t => parseFloat(t.getAttribute('x')))
           .filter(Number.isFinite)
@@ -143,7 +141,7 @@ const isMobile =
         }
         if (!monthWidth) monthWidth = column_width * 2.48; // robust fallback
 
-        // Horizontal extents of all bars
+        // 2) Horizontal extents of all bars
         const bars = Array.from(svg.querySelectorAll('rect.bar'));
         const firstBarX    = bars.length ? Math.min(...bars.map(r => parseFloat(r.getAttribute('x')) || 0)) : 0;
         const lastBarRight = bars.length ? Math.max(...bars.map(r => {
@@ -152,7 +150,7 @@ const isMobile =
           return x + w;
         })) : 0;
 
-        // Pads (in SVG units): ~12% month left, ~6% right
+        // Pads (SVG units)
         const LEFT_PAD_PX  = 0.12 * monthWidth;
         const RIGHT_PAD_PX = 0.06 * monthWidth;
 
@@ -161,14 +159,14 @@ const isMobile =
         const intrinsicWidth  = bboxAll.width;
         const intrinsicHeight = bboxAll.height;
 
-        // Horizontal viewport: cover whole process with pads
+        // 3) Horizontal viewport: cover whole process with pads
         let xOffset      = Math.max(0, firstBarX - LEFT_PAD_PX);
         let visibleWidth = Math.min(
           intrinsicWidth - xOffset,
           (lastBarRight - firstBarX) + LEFT_PAD_PX + RIGHT_PAD_PX
         );
 
-        // Vertical crop: keep header, trim below last bar
+        // 4) Vertical crop: keep header, trim below last bar
         const headerRect   = svg.querySelector('rect.grid-header');
         const headerHeight = headerRect ? parseFloat(headerRect.getAttribute('height')) : 60;
         const barsGroup    = svg.querySelector('g.bar');
@@ -182,61 +180,55 @@ const isMobile =
           visibleHeight = Math.max(headerHeight + 1, bottom - yOffset);
         }
 
-        // Apply viewport and left anchor
+        // 5) Apply viewport and left anchor
         svg.setAttribute('viewBox', `${xOffset} ${yOffset} ${visibleWidth} ${visibleHeight}`);
         svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
 
-        // Webflow-safe SVG sizing: let CSS own the size
-        svg.removeAttribute('width');
+        // 6) Fixed pixel width (scale down uniformly; avoids Webflow 100% blow-up)
+        const wrapper   = document.getElementById('gantt-target');
+        const safePad   = 12;
+        const containerW = wrapper ? wrapper.clientWidth : 320;
+        const fitWidth  = Math.max(260, Math.min(340, containerW - safePad));
+        svg.setAttribute('width', fitWidth);
         svg.removeAttribute('height');
-        svg.style.width    = '100%';
-        svg.style.maxWidth = '100%';
-        svg.style.height   = 'auto';
+        svg.style.height = 'auto';
 
-        // Header tweaks (as before)
+        // 7) Header tweaks (as you had)
         const dateGroup = svg.querySelector('g.date');
-        if (dateGroup) dateGroup.setAttribute('transform', 'translate(0, -7)');
+        if (dateGroup)  dateGroup.setAttribute('transform', 'translate(0, -7)');
         if (headerRect) headerRect.setAttribute('height', 50);
 
-        // Run clamping after layout/scale has settled
+        // 8) Clamp labels after layout settles
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             clampLabelsToViewport(svg, xOffset, visibleWidth);
           });
         });
 
-        // Avoid accidental horizontal scroll on mobile
-        const wrapper = document.getElementById('gantt-target');
+        // 9) Avoid accidental horizontal scroll on phones
         if (wrapper) {
           wrapper.style.overflowX = 'hidden';
           wrapper.style.overflowY = 'hidden';
         }
-
-        // Re-clamp on orientation / resize (mobile only)
-        const reclamp = () => {
-          const s = document.querySelector('#gantt-target svg');
-          if (s) clampLabelsToViewport(s, xOffset, visibleWidth);
-        };
-        window.addEventListener('resize', reclamp);
-        window.addEventListener('orientationchange', reclamp);
 
         hidePopupWrapper();
       }, 0);
     }
 
     /* ────────────────────────────────
-       Popup system (desktop unchanged; mobile centered)
+       Popup system (desktop original; mobile centered)
     ──────────────────────────────── */
     function isTouchDevice() {
       return window.matchMedia('(pointer: coarse)').matches;
     }
+
     function hidePopupWrapper() {
       const wrapper = document.querySelector('.popup-wrapper');
       if (!wrapper) return;
       wrapper.classList.add('hidden');
     }
 
-    // Centered on mobile; near-bar on desktop with soft clamping
+    // Show and position the popup (call after gantt.show_popup)
     function showPopupWrapper(barElement) {
       const wrapper   = document.querySelector('.popup-wrapper');
       const container = document.getElementById('gantt-target');
@@ -247,11 +239,12 @@ const isMobile =
       wrapper.style.pointerEvents = 'none';
 
       requestAnimationFrame(() => {
+        const popupRect     = wrapper.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
         const barRect       = barElement.getBoundingClientRect();
 
         if (isTouchDevice()) {
-          // MOBILE: centered with tiny left nudge
+          // MOBILE: center in the container with a slight left nudge
           const cx = containerRect.left + containerRect.width  / 2;
           const cy = containerRect.top  + containerRect.height / 2;
           const NUDGE_LEFT = 16;
@@ -260,37 +253,29 @@ const isMobile =
           wrapper.style.top       = cy + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
         } else {
-          // DESKTOP: above (or below) the bar, centered horizontally in container space
-          const popupRect   = wrapper.getBoundingClientRect();
-          const popupHeight = popupRect.height;
-          const barCenterX  = barRect.left + (barRect.width / 2);
+          // DESKTOP: your original placement (works well in Webflow)
+          let leftWrapper, topWrapper;
 
-          let topWrapper  = barRect.top - containerRect.top - popupHeight - 10;
-          if (topWrapper < 0) topWrapper = barRect.bottom - containerRect.top + 10;
+          if (popupRect.bottom > containerRect.bottom || popupRect.right > containerRect.right) {
+            const popupHeight    = popupRect.height;
+            const barRectHCenter = barRect.left + (barRect.right - barRect.left) / 2;
 
-          // Position relative to container
-          let leftWrapper = barCenterX - containerRect.left;
+            // Above bar (else below) — original logic
+            topWrapper = barRect.top - containerRect.top - popupHeight - 10;
+            if (topWrapper < 0) {
+              topWrapper = barRect.bottom - containerRect.top + 10;
+            }
+
+            // Horizontal position in viewport coordinates — original logic
+            let newLeft = barRectHCenter + containerRect.left;
+            if (newLeft < 0) newLeft = 10;
+
+            leftWrapper = newLeft;
+          }
 
           wrapper.style.left      = leftWrapper + 'px';
           wrapper.style.top       = topWrapper  + 'px';
           wrapper.style.transform = 'none';
-
-          // Soft clamping with margins
-          const RIGHT_MARGIN = 12;
-          const LEFT_MARGIN  = 8;
-
-          const now = wrapper.getBoundingClientRect();
-
-          const overshootR = now.right - (containerRect.right - RIGHT_MARGIN);
-          if (overshootR > 0) {
-            wrapper.style.left = (leftWrapper - overshootR) + 'px';
-          }
-
-          const after = wrapper.getBoundingClientRect();
-          const overshootL = (containerRect.left + LEFT_MARGIN) - after.left;
-          if (overshootL > 0) {
-            wrapper.style.left = (parseFloat(wrapper.style.left) + overshootL) + 'px';
-          }
         }
 
         wrapper.style.opacity       = '1';
@@ -298,11 +283,12 @@ const isMobile =
       });
     }
 
+    // Prime + hover/tap logic (unchanged from your working version)
     setTimeout(() => {
       const bars = document.querySelectorAll('.bar-wrapper');
       if (!bars.length) return;
 
-      // Prime Gantt's popup then hide ours
+      // Prime Gantt's popup system once
       bars[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       gantt.hide_popup();
       hidePopupWrapper();
@@ -341,6 +327,7 @@ const isMobile =
             popupOpenId = null;
             return;
           }
+
           gantt.show_popup({ task, target_element: bar });
           showPopupWrapper(bar);
           popupOpenId = taskId;
@@ -360,24 +347,26 @@ const isMobile =
       });
     });
 
-    /* 4 · Trim whitespace below bars — desktop only */
+    /* 4 · Trim whitespace below bars — desktop only (unchanged) */
     setTimeout(() => {
       const svg = document.querySelector('#gantt-target svg');
       if (!svg || isMobile) return;
       const bbox = svg.getBBox();
       svg.setAttribute('height', bbox.height);
-      const tgt = document.getElementById('gantt-target');
-      if (tgt) tgt.style.height = bbox.height + 'px';
+      document.getElementById('gantt-target').style.height = bbox.height + 'px';
     }, 0);
 
-    /* 5 · Prevent horizontal pan/scroll gestures */
+    /* 5 · Prevent horizontal scroll/pan on wheel or touch (unchanged) */
     const ganttTarget = document.getElementById('gantt-target');
     if (ganttTarget) {
       ganttTarget.addEventListener(
         'wheel',
-        e => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.preventDefault(); },
+        e => {
+          if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.preventDefault();
+        },
         { passive: false }
       );
+
       let lastTouchX = null;
       ganttTarget.addEventListener('touchstart', e => {
         if (e.touches.length === 1) lastTouchX = e.touches[0].clientX;
