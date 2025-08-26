@@ -16,7 +16,7 @@ const isMobile =
 ;(function () {
   // === helpers added (dates + edge labels + mobile vertical fix) ===
   const pad = n => String(n).padStart(2, '0');
-  const formatDDMMYYYY = d => `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+  // const formatDDMMYYYY = d => `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
   const monthBucket = d => {
     const day = d.getDate();
     const bucket = day <= 10 ? 'early' : (day <= 20 ? 'mid' : 'late');
@@ -36,15 +36,18 @@ const isMobile =
   
     // Grab the actual bars
     const prepBar = svg.querySelector('[data-id="prep"] rect.bar');
-    const capitalBar = svg.querySelector('[data-id="capital"] rect.bar');
-    if (!prepBar || !capitalBar) return;
+    const capitalWrapper = svg.querySelector('[data-id="capital"].bar-wrapper') 
+                      || svg.querySelector('[data-id="capital"]');
+    if (!prepBar || !capitalWrapper) return;
   
     const kickoffX = parseFloat(prepBar.getAttribute('x')) || 0;
-    const capitalX = parseFloat(capitalBar.getAttribute('x')) || 0;
-    const capitalW = parseFloat(capitalBar.getAttribute('width')) || 0;
-    const cashinX  = capitalX + capitalW;
+    let cashinX = 0;
+    if (capitalWrapper && capitalWrapper.getBBox) {
+      const bb = capitalWrapper.getBBox();
+      cashinX = bb.x + bb.width;   // right-most edge of wrapper
+    }
   
-    const kickoff = new Date(kickoffDateISO);
+    // const kickoff = new Date(kickoffDateISO);
     const cashIn  = new Date(cashInDateISO);
   
     const t1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
@@ -73,40 +76,47 @@ const isMobile =
     if (!svg) return;
     const rows = Array.from(svg.querySelectorAll('rect.grid-row'));
     if (!rows.length) return;
-
+  
     const rowTops = rows.map(r => ({
       y: parseFloat(r.getAttribute('y')) || 0,
       h: parseFloat(r.getAttribute('height')) || 0
     }));
-
-    // For each bar/progress pair, place bar so its bottom sits a few px above row bottom
+  
     const bars = svg.querySelectorAll('g.bar-group');
     bars.forEach(group => {
-      const bar = group.querySelector('rect.bar');
+      const bar  = group.querySelector('rect.bar');
       const prog = group.querySelector('rect.bar-progress');
       if (!bar) return;
-
+  
       const y0 = parseFloat(bar.getAttribute('y')) || 0;
       const h  = parseFloat(bar.getAttribute('height')) || 0;
-
-      // Find the row this bar belongs to (nearest row top)
-      let best = rowTops[0];
-      let bestDelta = Math.abs(y0 - rowTops[0].y);
+  
+      // nearest row
+      let best = rowTops[0], bestDelta = Math.abs(y0 - rowTops[0].y);
       for (let i = 1; i < rowTops.length; i++) {
         const d = Math.abs(y0 - rowTops[i].y);
         if (d < bestDelta) { best = rowTops[i]; bestDelta = d; }
       }
-
-      // Target: bottom of row minus small gap (3px)
-      const GAP_BOTTOM = 3;
+  
+      // Sit the bar exactly on the row bottom (no gap)
+      const GAP_BOTTOM = 0; // ← was 3
       const newY = Math.max(best.y, best.y + best.h - h - GAP_BOTTOM);
-
-      if (Math.abs(newY - y0) > 0.5) {
+  
+      if (Math.abs(newY - y0) > 0.1) {
+        const delta = newY - y0;
         bar.setAttribute('y', newY);
         if (prog) prog.setAttribute('y', newY);
+  
+        // keep handles visually aligned (even though dragging is disabled)
+        const handles = group.parentElement?.querySelectorAll('.handle-group rect') || [];
+        handles.forEach(hnd => {
+          const hy = parseFloat(hnd.getAttribute('y')) || 0;
+          hnd.setAttribute('y', hy + delta);
+        });
       }
     });
   }
+  
 
   // 1 · Date-format helper
   const today = new Date();
