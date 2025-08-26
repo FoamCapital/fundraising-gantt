@@ -183,3 +183,18 @@ screens so users on phones/tablets see larger, tap‐friendly elements.
     font-size: 1rem !important;
 }
 }
+
+/* --- Gantt: Webflow positioning fix (GLOBAL) --- */
+/* Place AFTER all existing rules and OUTSIDE any @media block */
+#gantt-target,
+#gantt-target .gantt-container {
+  position: relative;   /* anchor for .popup-wrapper (absolute) */
+}
+
+.popup-wrapper {
+  z-index: 5;           /* keep popup above the SVG */
+}
+
+#gantt-target svg {
+  display: block;       /* remove inline-SVG baseline gap/centering quirks */
+}
