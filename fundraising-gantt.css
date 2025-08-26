@@ -198,3 +198,9 @@ screens so users on phones/tablets see larger, tap‐friendly elements.
 #gantt-target svg {
   display: block;       /* remove inline-SVG baseline gap/centering quirks */
 }
+
+/* Force right-anchoring only for labels we explicitly clamped */
+#gantt-target text.bar-label.label-clamped {
+  text-anchor: end !important;
+}
+
