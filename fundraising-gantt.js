@@ -1,12 +1,8 @@
 /* foam-gantt.js
-   Desktop: unchanged.
-   Mobile (Webflow-safe): crop to process, clamp long labels (end-to-bar-left),
-   center popup on tap, and harden SVG sizing.
+   Desktop: hover-only; popup sits to the right of the bar by default and flips left if needed.
+   Mobile (Webflow-safe): crop to process, clamp long labels (end-to-bar-left with left clamp),
+   perfectly center popup on tap, and harden SVG sizing.
 */
-
-/* ---- flip to true when you want console telemetry ---- */
-const DEBUG = true;
-const dbg = (...args) => { if (DEBUG) console.debug('[gantt]', ...args); };
 
 const isMobile =
   window.matchMedia('(max-width: 1000px)').matches ||
@@ -74,7 +70,7 @@ const isMobile =
 
   /* 3 · Initialize on DOMContentLoaded */
   document.addEventListener('DOMContentLoaded', () => {
-    // Positioning context for popup (extra guard in case CSS loads late)
+    // Positioning context for popup (guard in case CSS loads late)
     const containerEl = document.getElementById('gantt-target');
     if (containerEl && getComputedStyle(containerEl).position === 'static') {
       containerEl.style.position = 'relative';
@@ -85,6 +81,8 @@ const isMobile =
 
     const column_width = isMobile ? 50 : 350;
     const padding      = isMobile ? 6  : 18;
+
+    const popupTrigger = isMobile ? 'click' : 'mouseenter'; // desktop must be hover-only
 
     const gantt = new Gantt('#gantt-target', tasks, {
       view_mode  : 'Month',
@@ -98,6 +96,8 @@ const isMobile =
 
       column_width,
       padding,
+
+      popup_trigger: popupTrigger,   // prevent desktop click popups
 
       view_modes: ['Day', 'Week', 'Month', 'Year'],
 
@@ -145,7 +145,6 @@ const isMobile =
           monthWidth = diffs[Math.floor(diffs.length/2)] || 0;
         }
         if (!monthWidth) monthWidth = column_width * 2.48; // fallback
-        dbg('monthWidth', monthWidth);
 
         // Horizontal extents of all bars
         const bars = Array.from(svg.querySelectorAll('rect.bar'));
@@ -203,8 +202,6 @@ const isMobile =
         if (dateGroup) dateGroup.setAttribute('transform', 'translate(0, -7)');
         if (headerRect) headerRect.setAttribute('height', 50);
 
-        dbg('viewBox', svg.getAttribute('viewBox'));
-
         // Clamp long labels after layout settles
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
@@ -212,7 +209,7 @@ const isMobile =
           });
         });
 
-        // Avoid accidental horizontal scroll on mobile (optional)
+        // Hard crop (no horizontal scroll) on mobile
         const wrapper = document.getElementById('gantt-target');
         if (wrapper) {
           wrapper.style.overflowX = 'hidden';
@@ -232,7 +229,7 @@ const isMobile =
     }
 
     /* ────────────────────────────────
-       Popup system (desktop unchanged; mobile centered)
+       Popup system
     ──────────────────────────────── */
     function isTouchDevice() {
       return window.matchMedia('(pointer: coarse)').matches;
@@ -253,53 +250,39 @@ const isMobile =
       wrapper.style.pointerEvents = 'none';
 
       requestAnimationFrame(() => {
-        // Always position relative to the element that actually anchors the absolute child
+        // Always position relative to the element that anchors the absolute child
         const anchorEl   = wrapper.offsetParent || container;
         const anchorRect = anchorEl.getBoundingClientRect();
         const barRect    = barElement.getBoundingClientRect();
-        const touch      = isTouchDevice();
 
-        if (touch) {
-          // MOBILE: center inside the anchor (offset-parent) with tiny left nudge
-          const NUDGE_LEFT = 16;
-          const leftPx = (anchorRect.width / 2) - NUDGE_LEFT;
+        if (isTouchDevice()) {
+          // MOBILE: perfectly centered
+          const leftPx = (anchorRect.width  / 2);
           const topPx  = (anchorRect.height / 2);
-
           wrapper.style.left      = leftPx + 'px';
           wrapper.style.top       = topPx  + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
-          dbg('popup/mobile', { leftPx, topPx });
         } else {
-          // DESKTOP: above (or below) the bar, centered over the bar within anchor
-          const popupRect   = wrapper.getBoundingClientRect();
-          const popupHeight = popupRect.height;
+          // DESKTOP: above/below already computed; fix HORIZONTAL placement
+          const popupRect = wrapper.getBoundingClientRect();
+          const popupW    = popupRect.width;
 
-          let topPx  = barRect.top  - anchorRect.top - popupHeight - 10;
+          // vertical (same as before)
+          let topPx  = barRect.top - anchorRect.top - popupRect.height - 10;
           if (topPx < 0) topPx = barRect.bottom - anchorRect.top + 10;
 
-          const barCenterX = barRect.left + (barRect.width / 2);
-          let leftPx = barCenterX - anchorRect.left;
+          // horizontal: prefer RIGHT of the bar; flip LEFT if would overflow
+          const GAP = 10, LEFT_MARGIN = 8, RIGHT_MARGIN = 12;
+
+          let leftPx = (barRect.right - anchorRect.left) + GAP; // to the right of the bar
+          if (leftPx + popupW > anchorRect.width - RIGHT_MARGIN) {
+            leftPx = (barRect.left - anchorRect.left) - popupW - GAP; // flip to the left
+          }
+          if (leftPx < LEFT_MARGIN) leftPx = LEFT_MARGIN;             // final clamp
 
           wrapper.style.left      = leftPx + 'px';
           wrapper.style.top       = topPx  + 'px';
           wrapper.style.transform = 'none';
-
-          // Soft clamping with margins inside the anchor
-          const RIGHT_MARGIN = 12;
-          const LEFT_MARGIN  = 8;
-
-          const now = wrapper.getBoundingClientRect();
-          const overshootR = now.right - (anchorRect.right - RIGHT_MARGIN);
-          if (overshootR > 0) {
-            wrapper.style.left = (leftPx - overshootR) + 'px';
-          }
-          const after = wrapper.getBoundingClientRect();
-          const overshootL = (anchorRect.left + LEFT_MARGIN) - after.left;
-          if (overshootL > 0) {
-            wrapper.style.left = (parseFloat(wrapper.style.left) + overshootL) + 'px';
-          }
-
-          dbg('popup/desktop', { leftPx, topPx });
         }
 
         wrapper.style.opacity       = '1';
@@ -311,7 +294,7 @@ const isMobile =
       const bars = document.querySelectorAll('.bar-wrapper');
       if (!bars.length) return;
 
-      // Prime Gantt's popup then hide ours
+      // Prime Frappe's popup then hide it (we use our wrapper)
       bars[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       gantt.hide_popup();
       hidePopupWrapper();
@@ -323,7 +306,7 @@ const isMobile =
         if (!taskId) return;
         const task = gantt.get_task(taskId);
 
-        // Desktop: Hover in/out
+        // Desktop: Hover in/out (no click behavior)
         bar.addEventListener('mouseenter', () => {
           if (!isTouchDevice()) {
             gantt.show_popup({ task, target_element: bar });
@@ -339,11 +322,15 @@ const isMobile =
           }
         });
 
-        // Mobile: Tap to toggle
+        // Cancel desktop clicks so Frappe doesn't re-open its own popup
         bar.addEventListener('click', e => {
-          if (!isTouchDevice()) return;
+          if (!isTouchDevice()) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+          }
+          // Mobile: Tap to toggle
           e.stopPropagation();
-
           if (popupOpenId === taskId) {
             gantt.hide_popup();
             hidePopupWrapper();
@@ -353,7 +340,7 @@ const isMobile =
           gantt.show_popup({ task, target_element: bar });
           showPopupWrapper(bar);
           popupOpenId = taskId;
-        });
+        }, true); // capture phase to intercept Frappe listener
       });
 
       // Tap outside to hide (mobile only)
@@ -377,7 +364,6 @@ const isMobile =
       svg.setAttribute('height', bbox.height);
       const tgt = document.getElementById('gantt-target');
       if (tgt) tgt.style.height = bbox.height + 'px';
-      dbg('desktop svg height', bbox.height);
     }, 0);
 
     /* 5 · Prevent horizontal pan/scroll gestures */
@@ -408,13 +394,14 @@ const isMobile =
   // ────────────────────────────────────────────────────────────────
   // Helper: clamp overflowing labels (mobile only)
   // Align label END to the bar's LEFT edge (minus GAP) when it would overflow.
+  // Also clamp against the viewport's LEFT edge and force dark text when clamped.
   // ────────────────────────────────────────────────────────────────
   function clampLabelsToViewport(svg, xOffset, visibleWidth) {
-    const GAP = 6; // space between text end and the bar's left edge
-    const rightLimit = xOffset + visibleWidth - 6; // viewport right edge (SVG units)
+    const GAP = 6;                     // gap between text end and the bar's left edge
+    const rightLimit = xOffset + visibleWidth - 6;
+    const leftLimit  = xOffset + 4;    // NEW: do not let labels go past left viewport edge
 
     const labels = svg.querySelectorAll('text.bar-label');
-    let clamped = 0;
 
     labels.forEach(label => {
       if (!label.hasAttribute('data-x-orig')) {
@@ -439,6 +426,7 @@ const isMobile =
         if (xOrig !== null) label.setAttribute('x', xOrig);
         label.removeAttribute('text-anchor');
         label.classList.remove('label-clamped');
+        label.style.removeProperty('fill'); // restore default color
         return;
       }
 
@@ -448,15 +436,18 @@ const isMobile =
 
       const barX = parseFloat(bar.getAttribute('x')) || 0;
 
+      // Target the text's RIGHT edge to (barX - GAP); clamp against left viewport
       const targetRight = barX - GAP;
-      const newX = targetRight - textW;
+      let newX = targetRight - textW;
+      if (newX < leftLimit) newX = leftLimit;
 
+      // Place with left anchor; mark as clamped and force dark color
       label.setAttribute('text-anchor', 'start');
       label.setAttribute('x', newX);
       label.classList.add('label-clamped');
-      clamped++;
+      label.style.fill = 'var(--text-dark)';
+      // If Frappe had given it the "big" class (white text), neutralize it when clamped:
+      label.classList.remove('big');
     });
-
-    dbg('labels clamped', clamped);
   }
 })();
