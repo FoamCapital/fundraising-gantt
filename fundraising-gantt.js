@@ -1,7 +1,6 @@
 /* foam-gantt.js
-   Desktop: hover-only; popup anchors to the BAR’s end (flips if needed).
-   Mobile: crop to process; for labels placed left of the bar, anchor their RIGHT edge
-           to the bar’s LEFT (minus a tiny gap); popup perfectly centered on tap.
+   Desktop: hover-only popup → beside bar (flip L/R + above/below to avoid overflow).
+   Mobile: viewport crop, clamp long labels to bar-left (true end alignment), centered popup.
 */
 
 const isMobile =
@@ -17,19 +16,19 @@ const isMobile =
   const taskDefs = [
     { id:'prep',    name:'Deck & Data Room Prep',        duration:14, progress:0,
       custom:{ info:'Finalize internal assessment, narrative and data pack'} },
-    { id:'io',      name:'Investor Outreach',             duration:10, progress:0,
+    { id:'io',      name:'Investor Outreach',            duration:10, progress:0,
       custom:{ info:'Warm Intros, Data Room Access and Management Calls'} },
-    { id:'qna',     name:'Investor Analysis & Q&A',       duration:25, progress:0,
+    { id:'qna',     name:'Investor Analysis & Q&A',      duration:25, progress:0,
       custom:{ info:'Investor Assessment & Q&A'} },
-    { id:'ts',      name:'Term-Sheet Negotiation',        duration:10, progress:0,
+    { id:'ts',      name:'Term-Sheet Negotiation',       duration:10, progress:0,
       custom:{ info:'Amount, Pricing, Covenants and Securities'} },
-    { id:'approv',  name:'Final Approvals',               duration: 5, progress:0,
+    { id:'approv',  name:'Final Approvals',              duration: 5, progress:0,
       custom:{ info:'Board and Shareholder approvals'} },
     { id:'dd',      name:'Legal & Financial Due Diligence   ', duration:40, progress:0,
       custom:{ info:'KYC/KYB, Legal docs, Financial assessment, etc.'} },
-    { id:'close',   name:'Closing & Signing',             duration: 5, progress:0,
+    { id:'close',   name:'Closing & Signing',            duration: 5, progress:0,
       custom:{ info:'Signing of legal docs and capital call'} },
-    { id:'capital', name:'Capital Call',                  duration: 5, progress:0,
+    { id:'capital', name:'Capital Call',                 duration: 5, progress:0,
       custom:{ info:'Funds wired within few days'} }
   ];
 
@@ -70,7 +69,7 @@ const isMobile =
 
   /* 3 · Initialize on DOMContentLoaded */
   document.addEventListener('DOMContentLoaded', () => {
-    // Ensure container is a positioning context for the popup
+    // Ensure popup positions against the container
     const containerEl = document.getElementById('gantt-target');
     if (containerEl && getComputedStyle(containerEl).position === 'static') {
       containerEl.style.position = 'relative';
@@ -117,7 +116,7 @@ const isMobile =
     });
 
     // ─────────────────────────────────────────────────────────
-    // MOBILE viewport crop + label fixing (anchor-right to barX−GAP)
+    // MOBILE viewport crop + label clamping
     // ─────────────────────────────────────────────────────────
     if (isMobile) {
       setTimeout(() => {
@@ -185,7 +184,7 @@ const isMobile =
         svg.setAttribute('viewBox', `${xOffset} ${yOffset} ${visibleWidth} ${visibleHeight}`);
         svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
 
-        // Let CSS own rendered size (Webflow-safe)
+        // Let CSS own the rendered size (Webflow-safe)
         svg.removeAttribute('width');
         svg.removeAttribute('height');
         svg.style.width    = '100%';
@@ -198,15 +197,27 @@ const isMobile =
         if (dateGroup) dateGroup.setAttribute('transform', 'translate(0, -7)');
         if (headerRect) headerRect.setAttribute('height', 50);
 
-        // Fix labels that must sit left of the bar
-        fixMobileLeftLabels(svg, 6 /*gap*/);
+        // Clamp long labels after layout settles
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            clampLabelsToViewport(svg, xOffset, visibleWidth);
+          });
+        });
 
-        // Avoid accidental horizontal scroll
+        // No accidental scroll on mobile (hard crop)
         const wrapper = document.getElementById('gantt-target');
         if (wrapper) {
           wrapper.style.overflowX = 'hidden';
           wrapper.style.overflowY = 'hidden';
         }
+
+        // Re-clamp on orientation / resize
+        const reclamp = () => {
+          const s = document.querySelector('#gantt-target svg');
+          if (s) clampLabelsToViewport(s, xOffset, visibleWidth);
+        };
+        window.addEventListener('resize', reclamp);
+        window.addEventListener('orientationchange', reclamp);
 
         hidePopupWrapper();
       }, 0);
@@ -214,20 +225,17 @@ const isMobile =
 
     /* ────────────────────────────────
        Popup system
-       - Desktop: hover near the bar; anchor to BAR end (or flip).
-       - Mobile: centered on tap.
     ──────────────────────────────── */
     function isTouchDevice() {
       return window.matchMedia('(pointer: coarse)').matches;
     }
-
     function hidePopupWrapper() {
       const wrapper = document.querySelector('.popup-wrapper');
       if (!wrapper) return;
       wrapper.classList.add('hidden');
     }
 
-    function showPopupWrapper(barWrapperEl) {
+    function showPopupWrapper(barElement) {
       const wrapper   = document.querySelector('.popup-wrapper');
       const container = document.getElementById('gantt-target');
       if (!wrapper || !container) return;
@@ -239,34 +247,48 @@ const isMobile =
       requestAnimationFrame(() => {
         const anchorEl   = wrapper.offsetParent || container;
         const anchorRect = anchorEl.getBoundingClientRect();
+        const barRect    = barElement.getBoundingClientRect();
+        const popupRect  = wrapper.getBoundingClientRect();
 
-        const barRectEl = barWrapperEl.querySelector('rect.bar') || barWrapperEl;
-        const barRect   = barRectEl.getBoundingClientRect();
+        const V_GAP = 10;
+        const H_GAP = 12;
 
         if (isTouchDevice()) {
-          // MOBILE: exactly centered
-          const cx = anchorRect.left + anchorRect.width  / 2;
-          const cy = anchorRect.top  + anchorRect.height / 2;
-          wrapper.style.left      = (cx - anchorRect.left) + 'px';
-          wrapper.style.top       = (cy - anchorRect.top)  + 'px';
+          // MOBILE: perfectly centered
+          wrapper.style.left      = (anchorRect.width / 2) + 'px';
+          wrapper.style.top       = (anchorRect.height / 2) + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
         } else {
-          // DESKTOP: above (or below) the bar; horizontally next to BAR end
-          const popupRect   = wrapper.getBoundingClientRect();
-          const POPUP_GAP   = 10;
+          // DESKTOP: beside the BAR (not the label), flip if needed; above by default
+          const preferRight = true;
+          const canFitRight = (barRect.right + H_GAP + popupRect.width) <= anchorRect.right;
+          const placeRight  = preferRight && canFitRight;
 
-          // vertical
-          let topPx = barRect.top - anchorRect.top - popupRect.height - 10;
-          if (topPx < 0) topPx = barRect.bottom - anchorRect.top + 10;
-
-          // prefer RIGHT of bar
-          let leftPx = barRect.right - anchorRect.left + POPUP_GAP;
-
-          // flip to LEFT of bar if overflowing
-          if (leftPx + popupRect.width > anchorRect.width - 8) {
-            leftPx = barRect.left - anchorRect.left - popupRect.width - POPUP_GAP;
-            if (leftPx < 8) leftPx = 8; // clamp within container
+          let leftPx;
+          if (placeRight) {
+            leftPx = (barRect.right - anchorRect.left) + H_GAP;
+          } else {
+            leftPx = (barRect.left - anchorRect.left) - H_GAP - popupRect.width;
           }
+
+          const aboveTop = (barRect.top - anchorRect.top) - popupRect.height - V_GAP;
+          const belowTop = (barRect.bottom - anchorRect.top) + V_GAP;
+          let topPx = aboveTop >= 0 ? aboveTop : belowTop;
+
+          // Clamp fully inside container
+          const LEFT_MARGIN  = 8;
+          const RIGHT_MARGIN = 12;
+          if (leftPx < LEFT_MARGIN) leftPx = LEFT_MARGIN;
+          const maxLeft = (anchorRect.width - popupRect.width - RIGHT_MARGIN);
+          if (leftPx > maxLeft) leftPx = Math.max(LEFT_MARGIN, maxLeft);
+
+          const maxTop = anchorRect.height - popupRect.height - V_GAP;
+          if (topPx > maxTop) {
+            // try above if below overflows
+            const tryAbove = Math.max(0, aboveTop);
+            topPx = Math.min(maxTop, tryAbove);
+          }
+          if (topPx < 0) topPx = 0;
 
           wrapper.style.left      = leftPx + 'px';
           wrapper.style.top       = topPx  + 'px';
@@ -278,12 +300,12 @@ const isMobile =
       });
     }
 
-    // Wire interactions
+    // Wire up interactions
     setTimeout(() => {
       const bars = document.querySelectorAll('.bar-wrapper');
       if (!bars.length) return;
 
-      // Prime then hide
+      // Prime Gantt's popup then hide ours
       bars[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
       gantt.hide_popup();
       hidePopupWrapper();
@@ -295,7 +317,7 @@ const isMobile =
         if (!taskId) return;
         const task = gantt.get_task(taskId);
 
-        // Desktop: hover in/out
+        // Desktop: hover only
         bar.addEventListener('mouseenter', () => {
           if (!isTouchDevice()) {
             gantt.show_popup({ task, target_element: bar });
@@ -311,16 +333,11 @@ const isMobile =
           }
         });
 
-        // Block default click popup on desktop; toggle on mobile
+        // Mobile: tap to toggle
         bar.addEventListener('click', e => {
-          if (!isTouchDevice()) {
-            e.preventDefault();
-            e.stopPropagation();
-            return; // hover-only on desktop
-          }
-
-          // Mobile: tap to toggle
+          if (!isTouchDevice()) return;
           e.stopPropagation();
+
           if (popupOpenId === taskId) {
             gantt.hide_popup();
             hidePopupWrapper();
@@ -382,55 +399,73 @@ const isMobile =
   });
 
   // ────────────────────────────────────────────────────────────────
-  // Helper (mobile): move any left-of-bar label so its RIGHT edge is
-  // exactly barX − GAP. Uses text-anchor:end so length doesn't matter.
-  // We apply this to labels that:
-  //  - overflow the viewport right edge, or
-  //  - are already left-of-bar but with a big/uneven gap.
+  // Helper: clamp overflowing labels (mobile only)
+  // If a label would overflow the viewport right-edge, move it to
+  // the LEFT of the bar by setting text-anchor:end and x = barX - GAP.
+  // This aligns the *end* of the text to the bar with a tiny gutter.
+  // Also remove the "big" class (white fill) when moved outside.
   // ────────────────────────────────────────────────────────────────
-  function fixMobileLeftLabels(svg, GAP) {
+  function clampLabelsToViewport(svg, xOffset, visibleWidth) {
+    const GAP = 6; // visual gutter between text end and bar
+    const rightLimit = xOffset + visibleWidth - 6; // viewport right edge (SVG units)
+
     const labels = svg.querySelectorAll('text.bar-label');
-
     labels.forEach(label => {
-      // find associated bar
-      const group = label.closest('.bar-group');
-      const bar   = group && group.querySelector('rect.bar');
-      if (!bar) return;
+      // Save originals once
+      if (!label.hasAttribute('data-x-orig')) {
+        const x0 = label.getAttribute('x');
+        if (x0 !== null) label.setAttribute('data-x-orig', x0);
+        label.setAttribute('data-anchor-orig', label.getAttribute('text-anchor') || 'start');
+        label.setAttribute('data-was-big', label.classList.contains('big') ? '1' : '0');
+      }
 
-      const barX = parseFloat(bar.getAttribute('x')) || 0;
+      const currX = parseFloat(label.getAttribute('x')) || 0;
 
-      // compute current text bounds (consider anchor)
-      const xAttr  = parseFloat(label.getAttribute('x')) || 0;
-      const anchor = (label.getAttribute('text-anchor') || 'start').toLowerCase();
+      // Width of the rendered text
       let textW = 0;
       try {
-        textW = label.getComputedTextLength ? label.getComputedTextLength() : label.getBBox().width;
+        textW = label.getComputedTextLength
+          ? label.getComputedTextLength()
+          : label.getBBox().width;
       } catch {
         textW = label.getBBox ? label.getBBox().width : 0;
       }
 
-      let left = xAttr, right = xAttr;
-      if (anchor === 'start') { left = xAttr; right = xAttr + textW; }
-      else if (anchor === 'end') { right = xAttr; left = xAttr - textW; }
-      else { // 'middle'
-        left = xAttr - textW/2; right = xAttr + textW/2;
+      // Natural right edge assuming 'start' anchor
+      const naturalRight = currX + textW;
+      const wouldOverflow = naturalRight > rightLimit;
+
+      // Find associated bar
+      const group = label.closest('.bar-group');
+      const bar   = group && group.querySelector('rect.bar');
+      if (!bar) return;
+      const barX = parseFloat(bar.getAttribute('x')) || 0;
+
+      if (!wouldOverflow) {
+        // Restore original position/anchor/classes
+        const xOrig = label.getAttribute('data-x-orig');
+        if (xOrig !== null) label.setAttribute('x', xOrig);
+        const anchorOrig = label.getAttribute('data-anchor-orig') || 'start';
+        label.setAttribute('text-anchor', anchorOrig);
+
+        // Put back "big" class if it was originally big
+        if (label.getAttribute('data-was-big') === '1') {
+          label.classList.add('big');
+        } else {
+          label.classList.remove('big');
+        }
+        label.classList.remove('clamped-left');
+        return;
       }
 
-      const desiredRight = barX - GAP;
+      // Clamp to the LEFT of the bar using anchor:end (end = right edge)
+      const targetX = barX - GAP;
+      label.setAttribute('text-anchor', 'end');
+      label.setAttribute('x', targetX);
 
-      // If label is outside the bar to the left (right <= barX) but the gap isn’t ~GAP,
-      // or if it currently risks hitting the viewport right edge (common trigger),
-      // force it to sit exactly GAP away.
-      const gapNow = Math.max(0, barX - right);
-      const TOL = 2; // small tolerance in SVG units
-
-      if (right > desiredRight + TOL || right < desiredRight - TOL || gapNow > GAP + TOL) {
-        label.setAttribute('text-anchor', 'end');
-        label.setAttribute('x', String(desiredRight));
-        // Ensure readable color when moved outside bars
-        label.style.fill = 'var(--text-dark)';
-        label.classList.add('label-clamped');
-      }
+      // Ensure readable color when outside the bar
+      label.classList.add('clamped-left');
+      label.classList.remove('big'); // avoid white text outside the bar
     });
   }
 })();
