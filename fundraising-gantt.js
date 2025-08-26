@@ -440,6 +440,7 @@ const isMobile =
         if (xOrig !== null) label.setAttribute('x', xOrig);
         const txtOrig = label.getAttribute('data-text-orig');
         if (txtOrig !== null) label.textContent = txtOrig;
+        label.style.removeProperty('text-anchor');  // ← remove inline override
         label.removeAttribute('text-anchor');
         label.classList.remove('label-clamped');
         label.style.removeProperty('fill');
@@ -456,8 +457,9 @@ const isMobile =
       const targetRight = barX - GAP;
 
       // Anchor by the RIGHT edge so we "kiss" the bar precisely
-      label.setAttribute('text-anchor', 'end');
       label.setAttribute('x', targetRight);
+      label.style.setProperty('text-anchor', 'end', 'important'); // ← force over Frappe CSS
+      label.setAttribute('text-anchor', 'end');                   // (backup presentation attr)
 
       // Ensure dark color / no internal white style
       label.classList.add('label-clamped');
