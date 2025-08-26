@@ -2,22 +2,10 @@
    Desktop: unchanged.
    Mobile (Webflow-safe): crop to process, clamp long labels (end-to-bar-left),
    center popup on tap, and harden SVG sizing.
-
-   ───────────────────────────────────────────────────────────────
-   REQUIRED CSS (add to your site stylesheet)
-   ───────────────────────────────────────────────────────────────
-   #gantt-target,
-   #gantt-target .gantt-container { position: relative; }   /* ensure popup is positioned vs container */
-   #gantt-target svg { display:block; width:100% !important; height:auto !important; }
-   /* optional but helpful */
-   .popup-wrapper { z-index: 5; }                           /* keep card above the SVG */
-
-   NOTE: If you prefer “no horizontal scroll” on phones, keep
-   #gantt-target { overflow-x: hidden; } in your mobile rules.
 */
 
 /* ---- flip to true when you want console telemetry ---- */
-const DEBUG = false;
+const DEBUG = true;
 const dbg = (...args) => { if (DEBUG) console.debug('[gantt]', ...args); };
 
 const isMobile =
