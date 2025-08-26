@@ -260,7 +260,8 @@ const isMobile =
 
       requestAnimationFrame(() => {
         const anchorRect = container.getBoundingClientRect();
-        const barRect    = barElement.getBoundingClientRect();
+        const barRect    = barElement.getBoundingClientRect();                 // wrapper (for vertical, unchanged)
+        const barRectOnly = (barElement.querySelector('rect.bar')?.getBoundingClientRect()) || barRect; // actual BAR for horizontal
 
         if (isTouchDevice()) {
           // MOBILE: perfectly centered
@@ -270,19 +271,21 @@ const isMobile =
           wrapper.style.top       = topPx  + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
         } else {
-          // DESKTOP: right of bar by default; flip left if would overflow.
+          // DESKTOP: right of BAR by default; flip left if would overflow.
           const popupRect = wrapper.getBoundingClientRect();
           const popupW    = popupRect.width;
           const popupH    = popupRect.height;
 
-          // Vertical: above bar (else below)
-          let topPx  = barRect.top - anchorRect.top - popupH - 10;
-          if (topPx < 0) topPx = barRect.bottom - anchorRect.top + 10;
+          // Vertical (unchanged): above bar else below
+          const V_GAP = 10;
+          let topPx  = barRect.top - anchorRect.top - popupH - V_GAP;
+          if (topPx < 0) topPx = barRect.bottom - anchorRect.top + V_GAP;
 
+          // Horizontal against the BAR (not the label)
           const GAP = 10, LEFT_MARGIN = 8, RIGHT_MARGIN = 12;
-          let leftPx = (barRect.right - anchorRect.left) + GAP; // to the right
+          let leftPx = (barRectOnly.right - anchorRect.left) + GAP; // default to the right of the BAR
           if (leftPx + popupW > anchorRect.width - RIGHT_MARGIN) {
-            leftPx = (barRect.left - anchorRect.left) - popupW - GAP; // flip to left
+            leftPx = (barRectOnly.left - anchorRect.left) - popupW - GAP;      // flip to left of the BAR
           }
           if (leftPx < LEFT_MARGIN) leftPx = LEFT_MARGIN;
 
@@ -420,6 +423,7 @@ const isMobile =
 
       const currX = parseFloat(label.getAttribute('x')) || 0;
 
+      // Measure current width
       let textW = 0;
       try {
         textW = label.getComputedTextLength
@@ -448,20 +452,40 @@ const isMobile =
       if (!bar) return;
       const barX = parseFloat(bar.getAttribute('x')) || 0;
 
-      // Room available to the left of the bar
-      const maxWidth = Math.max(0, (barX - GAP) - leftLimit);
+      // Target: right edge of the text sits at bar-left minus GAP
+      const targetRight = barX - GAP;
 
-      // If the label is too wide to fit, truncate with ellipsis to fit the space
+      // Anchor by the RIGHT edge so we "kiss" the bar precisely
+      label.setAttribute('text-anchor', 'end');
+      label.setAttribute('x', targetRight);
+
+      // Ensure dark color / no internal white style
+      label.classList.add('label-clamped');
+      label.classList.remove('big');
+      label.style.fill = 'var(--text-dark)';
+
+      // If the left edge would go past the viewport's leftLimit, truncate
       const original = label.getAttribute('data-text-orig') || label.textContent;
-      if (label.getSubStringLength && maxWidth > 0) {
+
+      const leftEdge = () => {
+        try {
+          const w = label.getSubStringLength
+            ? label.getSubStringLength(0, label.textContent.length)
+            : (label.getBBox ? label.getBBox().width : 0);
+          return targetRight - w;
+        } catch {
+          return targetRight - (label.getBBox ? label.getBBox().width : 0);
+        }
+      };
+
+      if (leftEdge() < leftLimit && label.getSubStringLength) {
         let lo = 0, hi = original.length, fit = original;
         while (lo <= hi) {
           const mid = (lo + hi) >> 1;
           const candidate = original.slice(0, mid) + (mid < original.length ? '…' : '');
-          // temporarily set to measure
           label.textContent = candidate;
           const w = label.getSubStringLength(0, candidate.length);
-          if (w <= maxWidth) {
+          if (targetRight - w >= leftLimit) {
             fit = candidate;
             lo = mid + 1;
           } else {
@@ -469,28 +493,10 @@ const isMobile =
           }
         }
         label.textContent = fit;
-        // update measured width
-        try {
-          textW = label.getSubStringLength(0, fit.length);
-        } catch {
-          textW = label.getBBox ? label.getBBox().width : textW;
-        }
-      } else if (maxWidth <= 0) {
-        // No usable space: fall back to a 1-char ellipsis
+      } else if (leftEdge() < leftLimit) {
+        // Fallback if precise measuring isn't available
         label.textContent = '…';
-        textW = label.getComputedTextLength ? label.getComputedTextLength() : 0;
       }
-
-      // Place so the RIGHT edge kisses barX - GAP
-      const targetRight = barX - GAP;
-      let newX = targetRight - textW;
-      if (newX < leftLimit) newX = leftLimit;
-
-      label.setAttribute('text-anchor', 'start');
-      label.setAttribute('x', newX);
-      label.classList.add('label-clamped');
-      label.style.fill = 'var(--text-dark)'; // ensure dark color when outside the bar
-      label.classList.remove('big');         // prevent white-inside style
     });
   }
 })();
