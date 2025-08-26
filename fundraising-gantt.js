@@ -14,6 +14,91 @@ const isMobile =
   window.matchMedia('(pointer: coarse)').matches;
 
 ;(function () {
+  // === helpers added (dates + edge labels + mobile vertical fix) ===
+  const pad = n => String(n).padStart(2, '0');
+  const formatDDMMYYYY = d => `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+  const monthBucket = d => {
+    const day = d.getDate();
+    const bucket = day <= 10 ? 'early' : (day <= 20 ? 'mid' : 'late');
+    const mon = d.toLocaleString('en-US', { month: 'short' });
+    return `≈ ${bucket} ${mon} ${d.getFullYear()}`;
+  };
+  function updateEdgeLabels(svg, kickoffDateISO, cashInDateISO) {
+    if (!svg) return;
+    const dateGroup = svg.querySelector('g.date');
+    if (!dateGroup) return;
+
+    // Remove all existing upper-text nodes (simplest + safest)
+    dateGroup.querySelectorAll('text.upper-text').forEach(n => n.remove());
+
+    // Current viewBox edges so labels stick to the visible area (desktop & mobile)
+    const vb = svg.viewBox.baseVal || { x: 0, y: 0, width: 0 };
+    const leftX  = vb.x + 8;                  // small inset
+    const rightX = vb.x + vb.width - 8;
+    const y      = 25;                        // matches original upper-text baseline in this theme
+
+    // Build Kickoff (exact) and Cash-in (approx bucket)
+    const kickoff = new Date(kickoffDateISO);
+    const cashIn  = new Date(cashInDateISO);
+
+    const t1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t1.setAttribute('class', 'upper-text');
+    t1.setAttribute('x', leftX);
+    t1.setAttribute('y', y);
+    t1.setAttribute('text-anchor', 'start');
+    t1.textContent = `Kickoff — ${formatDDMMYYYY(kickoff)}`;
+
+    const t2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t2.setAttribute('class', 'upper-text');
+    t2.setAttribute('x', rightX);
+    t2.setAttribute('y', y);
+    t2.setAttribute('text-anchor', 'end');
+    t2.textContent = `Cash-in ${monthBucket(cashIn)}`;
+
+    dateGroup.appendChild(t1);
+    dateGroup.appendChild(t2);
+  }
+
+  // Mobile-only: push each bar to the bottom of its grid row
+  function adjustBarVerticalMobile(svg) {
+    if (!svg) return;
+    const rows = Array.from(svg.querySelectorAll('rect.grid-row'));
+    if (!rows.length) return;
+
+    const rowTops = rows.map(r => ({
+      y: parseFloat(r.getAttribute('y')) || 0,
+      h: parseFloat(r.getAttribute('height')) || 0
+    }));
+
+    // For each bar/progress pair, place bar so its bottom sits a few px above row bottom
+    const bars = svg.querySelectorAll('g.bar-group');
+    bars.forEach(group => {
+      const bar = group.querySelector('rect.bar');
+      const prog = group.querySelector('rect.bar-progress');
+      if (!bar) return;
+
+      const y0 = parseFloat(bar.getAttribute('y')) || 0;
+      const h  = parseFloat(bar.getAttribute('height')) || 0;
+
+      // Find the row this bar belongs to (nearest row top)
+      let best = rowTops[0];
+      let bestDelta = Math.abs(y0 - rowTops[0].y);
+      for (let i = 1; i < rowTops.length; i++) {
+        const d = Math.abs(y0 - rowTops[i].y);
+        if (d < bestDelta) { best = rowTops[i]; bestDelta = d; }
+      }
+
+      // Target: bottom of row minus small gap (3px)
+      const GAP_BOTTOM = 3;
+      const newY = Math.max(best.y, best.y + best.h - h - GAP_BOTTOM);
+
+      if (Math.abs(newY - y0) > 0.5) {
+        bar.setAttribute('y', newY);
+        if (prog) prog.setAttribute('y', newY);
+      }
+    });
+  }
+
   // 1 · Date-format helper
   const today = new Date();
   const fmt   = d => d.toISOString().slice(0, 10);   // "YYYY-MM-DD"
@@ -85,7 +170,7 @@ const isMobile =
     const lastDate  = tasks.reduce((a, t) => (t.end   > a ? t.end   : a), tasks[0].end);
 
     const column_width = isMobile ? 50 : 350;
-    const padding      = isMobile ? 6  : 18;
+    const padding      = isMobile ? 12  : 18;
 
     // Desktop = hover-only; Mobile = click/tap
     const popupTrigger = isMobile ? 'click' : 'mouseenter';
@@ -120,7 +205,13 @@ const isMobile =
       on_progress_change: () => {}
     });
 
-    // MOBILE viewport + label clamping
+    // Kickoff/Cash-in edge labels (desktop first render)
+    setTimeout(() => {
+      const svg = document.querySelector('#gantt-target svg');
+      if (svg) updateEdgeLabels(svg, firstDate, lastDate);
+    }, 0);
+
+    // MOBILE viewport + label clamping + vertical bar fix + edge labels against cropped viewBox
     if (isMobile) {
       setTimeout(() => {
         const svg = document.querySelector('#gantt-target svg');
@@ -204,6 +295,10 @@ const isMobile =
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             clampLabelsToViewport(svg, xOffset, visibleWidth);
+            // Place bar bottoms neatly within their rows (mobile-only)
+            adjustBarVerticalMobile(svg);
+            // Edge labels against the cropped viewBox
+            updateEdgeLabels(svg, firstDate, lastDate);
           });
         });
 
@@ -214,13 +309,16 @@ const isMobile =
           wrapper.style.overflowY = 'hidden';
         }
 
-        // Re-clamp on orientation / resize
-        const reclamp = () => {
+        // Re-run on orientation/resize
+        const rerun = () => {
           const s = document.querySelector('#gantt-target svg');
-          if (s) clampLabelsToViewport(s, xOffset, visibleWidth);
+          if (!s) return;
+          clampLabelsToViewport(s, xOffset, visibleWidth);
+          adjustBarVerticalMobile(s);
+          updateEdgeLabels(s, firstDate, lastDate);
         };
-        window.addEventListener('resize', reclamp);
-        window.addEventListener('orientationchange', reclamp);
+        window.addEventListener('resize', rerun);
+        window.addEventListener('orientationchange', rerun);
 
         hidePopupWrapper();
       }, 0);

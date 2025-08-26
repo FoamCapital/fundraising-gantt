@@ -159,11 +159,11 @@ screens so users on phones/tablets see larger, tap‐friendly elements.
 
 /* 4) Make pop‐up card text bigger and more tappable */
 .details-container {
-  min-width: 150px;
-  padding: 1rem 1.25rem;
+  min-width: 180px;
+  padding: 1rem 0.75rem;
 }
 .details-container h5 {
-  font-size: 0.8rem !important;
+  font-size: 0.75rem !important;
 }
 .details-container p {
   font-size: 0.7rem !important;
@@ -180,7 +180,7 @@ screens so users on phones/tablets see larger, tap‐friendly elements.
 }
 
 .task-dates {
-    font-size: 1rem !important;
+    font-size: 8rem !important;
 }
 }
 
