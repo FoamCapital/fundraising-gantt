@@ -1,7 +1,12 @@
 /* foam-gantt.js
-   Desktop: hover-only; popup sits to the right of the bar by default and flips left if needed.
+   Desktop: hover-only; popup sits to the right of the BAR by default and flips left if needed.
    Mobile (Webflow-safe): crop to process, clamp long labels (end-to-bar-left) with smart truncation,
    perfectly center popup on tap, and harden SVG sizing.
+
+   Notes for future editors:
+   - Mobile label clamp relies on setting text-anchor:end on .label-clamped.
+     Keep the CSS patch below so no theme CSS (e.g. frappe-gantt.css) forces it back to "middle".
+   - The popup wrapper is re-parented into #gantt-target to guarantee correct positioning.
 */
 
 const isMobile =
@@ -9,11 +14,11 @@ const isMobile =
   window.matchMedia('(pointer: coarse)').matches;
 
 ;(function () {
-  /* 1 · Date-format helper */
+  // 1 · Date-format helper
   const today = new Date();
   const fmt   = d => d.toISOString().slice(0, 10);   // "YYYY-MM-DD"
 
-  /* 2 · Task definitions */
+  // 2 · Task definitions
   const taskDefs = [
     { id:'prep',    name:'Deck & Data Room Prep',        duration:14, progress:0,
       custom:{ info:'Finalize internal assessment, narrative and data pack'} },
@@ -68,9 +73,9 @@ const isMobile =
     };
   });
 
-  /* 3 · Initialize on DOMContentLoaded */
+  // 3 · Initialize on DOMContentLoaded
   document.addEventListener('DOMContentLoaded', () => {
-    // Positioning context for popup (guard in case CSS loads late)
+    // Ensure popup anchoring works even if CSS loads late
     const containerEl = document.getElementById('gantt-target');
     if (containerEl && getComputedStyle(containerEl).position === 'static') {
       containerEl.style.position = 'relative';
@@ -82,26 +87,21 @@ const isMobile =
     const column_width = isMobile ? 50 : 350;
     const padding      = isMobile ? 6  : 18;
 
-    // Desktop must be hover-only to avoid stray click popups
+    // Desktop = hover-only; Mobile = click/tap
     const popupTrigger = isMobile ? 'click' : 'mouseenter';
 
     const gantt = new Gantt('#gantt-target', tasks, {
       view_mode  : 'Month',
       start_date : firstDate,
       end_date   : lastDate,
-
       readonly:           true,
       readonly_dates:     true,
       readonly_progress:  true,
       draggable:          false,
-
       column_width,
       padding,
-
       popup_trigger: popupTrigger,
-
       view_modes: ['Day', 'Week', 'Month', 'Year'],
-
       custom_popup_html: function(task) {
         return `
           <div class="details-container">
@@ -115,15 +115,12 @@ const isMobile =
           </div>
         `;
       },
-
       on_click          : () => {},
       on_date_change    : () => {},
       on_progress_change: () => {}
     });
 
-    // ─────────────────────────────────────────────────────────
-    // MOBILE-ONLY viewport + label clamping
-    // ─────────────────────────────────────────────────────────
+    // MOBILE viewport + label clamping
     if (isMobile) {
       setTimeout(() => {
         const svg = document.querySelector('#gantt-target svg');
@@ -229,9 +226,7 @@ const isMobile =
       }, 0);
     }
 
-    /* ────────────────────────────────
-       Popup system
-    ──────────────────────────────── */
+    // Popup system
     function isTouchDevice() {
       return window.matchMedia('(pointer: coarse)').matches;
     }
@@ -260,7 +255,7 @@ const isMobile =
 
       requestAnimationFrame(() => {
         const anchorRect = container.getBoundingClientRect();
-        const barRect    = barElement.getBoundingClientRect();                 // wrapper (for vertical, unchanged)
+        const barRect    = barElement.getBoundingClientRect();                 // wrapper (for vertical)
         const barRectOnly = (barElement.querySelector('rect.bar')?.getBoundingClientRect()) || barRect; // actual BAR for horizontal
 
         if (isTouchDevice()) {
@@ -276,7 +271,7 @@ const isMobile =
           const popupW    = popupRect.width;
           const popupH    = popupRect.height;
 
-          // Vertical (unchanged): above bar else below
+          // Vertical: above bar else below
           const V_GAP = 10;
           let topPx  = barRect.top - anchorRect.top - popupH - V_GAP;
           if (topPx < 0) topPx = barRect.bottom - anchorRect.top + V_GAP;
@@ -349,7 +344,7 @@ const isMobile =
           gantt.show_popup({ task, target_element: bar });
           showPopupWrapper(bar);
           popupOpenId = taskId;
-        }, true); // capture phase to intercept Frappe listener
+        }, true);
       });
 
       // Tap outside to hide (mobile only)
@@ -365,7 +360,7 @@ const isMobile =
       });
     });
 
-    /* 4 · Trim whitespace below bars — desktop only */
+    // 4 · Trim whitespace below bars — desktop only
     setTimeout(() => {
       const svg = document.querySelector('#gantt-target svg');
       if (!svg || isMobile) return;
@@ -375,7 +370,7 @@ const isMobile =
       if (tgt) tgt.style.height = bbox.height + 'px';
     }, 0);
 
-    /* 5 · Prevent horizontal pan/scroll gestures */
+    // 5 · Prevent horizontal pan/scroll gestures
     const ganttTarget = document.getElementById('gantt-target');
     if (ganttTarget) {
       ganttTarget.addEventListener(
@@ -400,10 +395,8 @@ const isMobile =
     }
   });
 
-  // ────────────────────────────────────────────────────────────────
   // Helper: clamp overflowing labels (mobile only)
   // End-to-bar-left placement with LEFT clamp + ellipsis fitting.
-  // ────────────────────────────────────────────────────────────────
   function clampLabelsToViewport(svg, xOffset, visibleWidth) {
     const GAP = 6;                     // gap between text end and the bar's left edge
     const rightLimit = xOffset + visibleWidth - 6;
@@ -440,7 +433,6 @@ const isMobile =
         if (xOrig !== null) label.setAttribute('x', xOrig);
         const txtOrig = label.getAttribute('data-text-orig');
         if (txtOrig !== null) label.textContent = txtOrig;
-        label.style.removeProperty('text-anchor');  // ← remove inline override
         label.removeAttribute('text-anchor');
         label.classList.remove('label-clamped');
         label.style.removeProperty('fill');
@@ -457,16 +449,15 @@ const isMobile =
       const targetRight = barX - GAP;
 
       // Anchor by the RIGHT edge so we "kiss" the bar precisely
+      label.setAttribute('text-anchor', 'end');
       label.setAttribute('x', targetRight);
-      label.style.setProperty('text-anchor', 'end', 'important'); // ← force over Frappe CSS
-      label.setAttribute('text-anchor', 'end');                   // (backup presentation attr)
 
       // Ensure dark color / no internal white style
       label.classList.add('label-clamped');
       label.classList.remove('big');
       label.style.fill = 'var(--text-dark)';
 
-      // If the left edge would go past the viewport's leftLimit, truncate
+      // If the left edge would go past the viewport's leftLimit, truncate to fit
       const original = label.getAttribute('data-text-orig') || label.textContent;
 
       const leftEdge = () => {
