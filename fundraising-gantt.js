@@ -23,6 +23,7 @@ const isMobile =
     const mon = d.toLocaleString('en-US', { month: 'short' });
     return `≈ ${bucket} ${mon} ${d.getFullYear()}`;
   };
+
   function updateEdgeLabels(svg, kickoffDateISO, cashInDateISO) {
     if (!svg) return;
     const dateGroup = svg.querySelector('g.date');
@@ -31,26 +32,31 @@ const isMobile =
     // Remove all existing upper-text nodes (simplest + safest)
     dateGroup.querySelectorAll('text.upper-text').forEach(n => n.remove());
 
-    // Current viewBox edges so labels stick to the visible area (desktop & mobile)
-    const vb = svg.viewBox.baseVal || { x: 0, y: 0, width: 0 };
-    const leftX  = vb.x + 8;                  // small inset
-    const rightX = vb.x + vb.width - 8;
-    const y      = 25;                        // matches original upper-text baseline in this theme
+    const y = 25; // matches original upper-text baseline
 
-    // Build Kickoff (exact) and Cash-in (approx bucket)
+    // Grab the actual bars
+    const prepBar = svg.querySelector('[data-id="prep"] rect.bar');
+    const capitalBar = svg.querySelector('[data-id="capital"] rect.bar');
+    if (!prepBar || !capitalBar) return;
+
+    const kickoffX = parseFloat(prepBar.getAttribute('x')) || 0;
+    const capitalX = parseFloat(capitalBar.getAttribute('x')) || 0;
+    const capitalW = parseFloat(capitalBar.getAttribute('width')) || 0;
+    const cashinX  = capitalX + capitalW;
+
     const kickoff = new Date(kickoffDateISO);
     const cashIn  = new Date(cashInDateISO);
 
     const t1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     t1.setAttribute('class', 'upper-text');
-    t1.setAttribute('x', leftX);
+    t1.setAttribute('x', kickoffX);
     t1.setAttribute('y', y);
     t1.setAttribute('text-anchor', 'start');
     t1.textContent = `Kickoff — ${formatDDMMYYYY(kickoff)}`;
 
     const t2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     t2.setAttribute('class', 'upper-text');
-    t2.setAttribute('x', rightX);
+    t2.setAttribute('x', cashinX);
     t2.setAttribute('y', y);
     t2.setAttribute('text-anchor', 'end');
     t2.textContent = `Cash-in ${monthBucket(cashIn)}`;
