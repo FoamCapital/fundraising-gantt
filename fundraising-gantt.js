@@ -28,42 +28,45 @@ const isMobile =
     if (!svg) return;
     const dateGroup = svg.querySelector('g.date');
     if (!dateGroup) return;
-
-    // Remove all existing upper-text nodes (simplest + safest)
+  
+    // Remove all existing upper-text nodes
     dateGroup.querySelectorAll('text.upper-text').forEach(n => n.remove());
-
-    const y = 25; // matches original upper-text baseline
-
+  
+    const y = 25; // baseline
+  
     // Grab the actual bars
     const prepBar = svg.querySelector('[data-id="prep"] rect.bar');
     const capitalBar = svg.querySelector('[data-id="capital"] rect.bar');
     if (!prepBar || !capitalBar) return;
-
+  
     const kickoffX = parseFloat(prepBar.getAttribute('x')) || 0;
     const capitalX = parseFloat(capitalBar.getAttribute('x')) || 0;
     const capitalW = parseFloat(capitalBar.getAttribute('width')) || 0;
     const cashinX  = capitalX + capitalW;
-
+  
     const kickoff = new Date(kickoffDateISO);
     const cashIn  = new Date(cashInDateISO);
-
+  
     const t1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     t1.setAttribute('class', 'upper-text');
     t1.setAttribute('x', kickoffX);
     t1.setAttribute('y', y);
     t1.setAttribute('text-anchor', 'start');
-    t1.textContent = `Kickoff — ${formatDDMMYYYY(kickoff)}`;
-
+    t1.style.textAnchor = 'start'; // inline override
+    t1.textContent = `With a launch today...`// — ${formatDDMMYYYY(kickoff)}`;
+  
     const t2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     t2.setAttribute('class', 'upper-text');
     t2.setAttribute('x', cashinX);
     t2.setAttribute('y', y);
     t2.setAttribute('text-anchor', 'end');
-    t2.textContent = `Cash-in ${monthBucket(cashIn)}`;
-
+    t2.style.textAnchor = 'end'; // inline override
+    t2.textContent = `Expected closing ${monthBucket(cashIn)}`;
+  
     dateGroup.appendChild(t1);
     dateGroup.appendChild(t2);
   }
+  
 
   // Mobile-only: push each bar to the bottom of its grid row
   function adjustBarVerticalMobile(svg) {
