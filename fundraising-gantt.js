@@ -1,6 +1,6 @@
 /* foam-gantt.js
    Desktop: hover-only; popup sits to the right of the bar by default and flips left if needed.
-   Mobile (Webflow-safe): crop to process, clamp long labels (end-to-bar-left with left clamp),
+   Mobile (Webflow-safe): crop to process, clamp long labels (end-to-bar-left) with smart truncation,
    perfectly center popup on tap, and harden SVG sizing.
 */
 
@@ -82,7 +82,8 @@ const isMobile =
     const column_width = isMobile ? 50 : 350;
     const padding      = isMobile ? 6  : 18;
 
-    const popupTrigger = isMobile ? 'click' : 'mouseenter'; // desktop must be hover-only
+    // Desktop must be hover-only to avoid stray click popups
+    const popupTrigger = isMobile ? 'click' : 'mouseenter';
 
     const gantt = new Gantt('#gantt-target', tasks, {
       view_mode  : 'Month',
@@ -97,7 +98,7 @@ const isMobile =
       column_width,
       padding,
 
-      popup_trigger: popupTrigger,   // prevent desktop click popups
+      popup_trigger: popupTrigger,
 
       view_modes: ['Day', 'Week', 'Month', 'Year'],
 
@@ -241,18 +242,24 @@ const isMobile =
     }
 
     function showPopupWrapper(barElement) {
-      const wrapper   = document.querySelector('.popup-wrapper');
       const container = document.getElementById('gantt-target');
+      let wrapper   = document.querySelector('.popup-wrapper');
       if (!wrapper || !container) return;
 
+      // Ensure the wrapper is anchored to the container and sits on top
+      if (wrapper.parentElement !== container) container.appendChild(wrapper);
+      wrapper.style.zIndex = '5';
+
       wrapper.classList.remove('hidden');
-      wrapper.style.opacity       = '0';
-      wrapper.style.pointerEvents = 'none';
+      // Reset any previous transform/pos so measurements are stable
+      wrapper.style.transform    = 'none';
+      wrapper.style.left         = '0px';
+      wrapper.style.top          = '0px';
+      wrapper.style.opacity      = '0';
+      wrapper.style.pointerEvents= 'none';
 
       requestAnimationFrame(() => {
-        // Always position relative to the element that anchors the absolute child
-        const anchorEl   = wrapper.offsetParent || container;
-        const anchorRect = anchorEl.getBoundingClientRect();
+        const anchorRect = container.getBoundingClientRect();
         const barRect    = barElement.getBoundingClientRect();
 
         if (isTouchDevice()) {
@@ -263,22 +270,21 @@ const isMobile =
           wrapper.style.top       = topPx  + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
         } else {
-          // DESKTOP: above/below already computed; fix HORIZONTAL placement
+          // DESKTOP: right of bar by default; flip left if would overflow.
           const popupRect = wrapper.getBoundingClientRect();
           const popupW    = popupRect.width;
+          const popupH    = popupRect.height;
 
-          // vertical (same as before)
-          let topPx  = barRect.top - anchorRect.top - popupRect.height - 10;
+          // Vertical: above bar (else below)
+          let topPx  = barRect.top - anchorRect.top - popupH - 10;
           if (topPx < 0) topPx = barRect.bottom - anchorRect.top + 10;
 
-          // horizontal: prefer RIGHT of the bar; flip LEFT if would overflow
           const GAP = 10, LEFT_MARGIN = 8, RIGHT_MARGIN = 12;
-
-          let leftPx = (barRect.right - anchorRect.left) + GAP; // to the right of the bar
+          let leftPx = (barRect.right - anchorRect.left) + GAP; // to the right
           if (leftPx + popupW > anchorRect.width - RIGHT_MARGIN) {
-            leftPx = (barRect.left - anchorRect.left) - popupW - GAP; // flip to the left
+            leftPx = (barRect.left - anchorRect.left) - popupW - GAP; // flip to left
           }
-          if (leftPx < LEFT_MARGIN) leftPx = LEFT_MARGIN;             // final clamp
+          if (leftPx < LEFT_MARGIN) leftPx = LEFT_MARGIN;
 
           wrapper.style.left      = leftPx + 'px';
           wrapper.style.top       = topPx  + 'px';
@@ -393,20 +399,23 @@ const isMobile =
 
   // ────────────────────────────────────────────────────────────────
   // Helper: clamp overflowing labels (mobile only)
-  // Align label END to the bar's LEFT edge (minus GAP) when it would overflow.
-  // Also clamp against the viewport's LEFT edge and force dark text when clamped.
+  // End-to-bar-left placement with LEFT clamp + ellipsis fitting.
   // ────────────────────────────────────────────────────────────────
   function clampLabelsToViewport(svg, xOffset, visibleWidth) {
     const GAP = 6;                     // gap between text end and the bar's left edge
     const rightLimit = xOffset + visibleWidth - 6;
-    const leftLimit  = xOffset + 4;    // NEW: do not let labels go past left viewport edge
+    const leftLimit  = xOffset + 4;
 
     const labels = svg.querySelectorAll('text.bar-label');
 
     labels.forEach(label => {
+      // Save orig x + text for restoration
       if (!label.hasAttribute('data-x-orig')) {
         const x0 = label.getAttribute('x');
         if (x0 !== null) label.setAttribute('data-x-orig', x0);
+      }
+      if (!label.hasAttribute('data-text-orig')) {
+        label.setAttribute('data-text-orig', label.textContent);
       }
 
       const currX = parseFloat(label.getAttribute('x')) || 0;
@@ -422,32 +431,66 @@ const isMobile =
 
       const wouldOverflow = currX + textW > rightLimit;
       if (!wouldOverflow) {
+        // restore original if previously clamped
         const xOrig = label.getAttribute('data-x-orig');
         if (xOrig !== null) label.setAttribute('x', xOrig);
+        const txtOrig = label.getAttribute('data-text-orig');
+        if (txtOrig !== null) label.textContent = txtOrig;
         label.removeAttribute('text-anchor');
         label.classList.remove('label-clamped');
-        label.style.removeProperty('fill'); // restore default color
+        label.style.removeProperty('fill');
         return;
       }
 
+      // Find associated bar
       const group = label.closest('.bar-group');
       const bar   = group && group.querySelector('rect.bar');
       if (!bar) return;
-
       const barX = parseFloat(bar.getAttribute('x')) || 0;
 
-      // Target the text's RIGHT edge to (barX - GAP); clamp against left viewport
+      // Room available to the left of the bar
+      const maxWidth = Math.max(0, (barX - GAP) - leftLimit);
+
+      // If the label is too wide to fit, truncate with ellipsis to fit the space
+      const original = label.getAttribute('data-text-orig') || label.textContent;
+      if (label.getSubStringLength && maxWidth > 0) {
+        let lo = 0, hi = original.length, fit = original;
+        while (lo <= hi) {
+          const mid = (lo + hi) >> 1;
+          const candidate = original.slice(0, mid) + (mid < original.length ? '…' : '');
+          // temporarily set to measure
+          label.textContent = candidate;
+          const w = label.getSubStringLength(0, candidate.length);
+          if (w <= maxWidth) {
+            fit = candidate;
+            lo = mid + 1;
+          } else {
+            hi = mid - 1;
+          }
+        }
+        label.textContent = fit;
+        // update measured width
+        try {
+          textW = label.getSubStringLength(0, fit.length);
+        } catch {
+          textW = label.getBBox ? label.getBBox().width : textW;
+        }
+      } else if (maxWidth <= 0) {
+        // No usable space: fall back to a 1-char ellipsis
+        label.textContent = '…';
+        textW = label.getComputedTextLength ? label.getComputedTextLength() : 0;
+      }
+
+      // Place so the RIGHT edge kisses barX - GAP
       const targetRight = barX - GAP;
       let newX = targetRight - textW;
       if (newX < leftLimit) newX = leftLimit;
 
-      // Place with left anchor; mark as clamped and force dark color
       label.setAttribute('text-anchor', 'start');
       label.setAttribute('x', newX);
       label.classList.add('label-clamped');
-      label.style.fill = 'var(--text-dark)';
-      // If Frappe had given it the "big" class (white text), neutralize it when clamped:
-      label.classList.remove('big');
+      label.style.fill = 'var(--text-dark)'; // ensure dark color when outside the bar
+      label.classList.remove('big');         // prevent white-inside style
     });
   }
 })();
