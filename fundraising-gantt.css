@@ -168,11 +168,11 @@ screens so users on phones/tablets see larger, tap‐friendly elements.
 
 .upper-text,
 .lower-text {
-    font-size: 0.7rem !important;
+    font-size: 0.9rem !important;
 }
 
 .bar-label {
-    font-size: 0.7rem !important;
+    font-size: 0.8rem !important;
 }
 
 .task-dates {
