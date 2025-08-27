@@ -22,7 +22,7 @@ const isMobile =
     const day = d.getDate();
     const bucket = day <= 10 ? 'early' : (day <= 20 ? 'mid' : 'late');
     const mon = d.toLocaleString('en-US', { month: 'short' });
-    return `≈ ${bucket} ${mon} ${d.getFullYear()}`;
+    return `${bucket} ${mon} '${String(d.getFullYear()).slice(-2)}`;
   };
 
   // px/day from Month header (median inter-month spacing). Month ≈ 30.4 d.
@@ -140,7 +140,7 @@ const isMobile =
     t1.setAttribute('y', y);
     t1.setAttribute('text-anchor', 'start');
     t1.style.textAnchor = 'start';
-    t1.textContent = `With a launch today...`;
+    t1.textContent = `Assuming launch today`;
 
     const t2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     t2.setAttribute('class', 'upper-text');
@@ -148,7 +148,7 @@ const isMobile =
     t2.setAttribute('y', y);
     t2.setAttribute('text-anchor', 'end');
     t2.style.textAnchor = 'end';
-    t2.textContent = `Expected closing ${monthBucket(cashIn)}`;
+    t2.textContent = `Projected closing in ${monthBucket(cashIn)}`;
 
     dateGroup.appendChild(t1);
     dateGroup.appendChild(t2);
