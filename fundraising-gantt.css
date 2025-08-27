@@ -16,7 +16,7 @@
 /*––––  WRAPPER  ––––*/
 #gantt-target {
   width: 100%;
-  max-width: 800px;
+  max-width: 650px;
   overflow-x: hidden;
   overflow-y: hidden;
   border: 1px solid #e6eaef;
@@ -143,10 +143,6 @@ screens so users on phones/tablets see larger, tap‐friendly elements.
   font-size: 8px !important;
 }
 
-/* Mobile-specific bar height reductions */
-.grid-row {
-    height: 25px !important; /* Reduced from 5px to 25px for actual row height */
-}
 
 .bar-wrapper {
     height: 6px !important; /* Reduce wrapper height */

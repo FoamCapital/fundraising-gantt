@@ -3,10 +3,11 @@
    Mobile (Webflow-safe): crop to process, clamp long labels (end-to-bar-left) with smart truncation,
    perfectly center popup on tap, and harden SVG sizing.
 
-   Notes for future editors:
-   - Mobile label clamp relies on setting text-anchor:end on .label-clamped.
-     Keep the CSS patch below so no theme CSS (e.g. frappe-gantt.css) forces it back to "middle".
-   - The popup wrapper is re-parented into #gantt-target to guarantee correct positioning.
+   Changes vs your reference:
+   - Desktop: viewBox is cropped so the LEFT edge starts exactly 10 days before the first BAR.
+     We compute global coords via getBBox(), lock px/day from header, and set BOTH x and width.
+   - Add: extend the right edge by configurable EXTRA DAYS (variable name: "extra-days").
+   - “Expected closing” still snaps to the rightmost bar-wrapper.
 */
 
 const isMobile =
@@ -14,9 +15,9 @@ const isMobile =
   window.matchMedia('(pointer: coarse)').matches;
 
 ;(function () {
-  // === helpers added (dates + edge labels + mobile vertical fix) ===
+  // --- helpers (dates + edge labels + mobile vertical fix) ---
   const pad = n => String(n).padStart(2, '0');
-  // const formatDDMMYYYY = d => `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
+  const formatDDMMYYYY = d => `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`;
   const monthBucket = d => {
     const day = d.getDate();
     const bucket = day <= 10 ? 'early' : (day <= 20 ? 'mid' : 'late');
@@ -24,105 +25,176 @@ const isMobile =
     return `≈ ${bucket} ${mon} ${d.getFullYear()}`;
   };
 
+  // px/day from Month header (median inter-month spacing). Month ≈ 30.4 d.
+  function pxPerDayFromHeader(svg) {
+    const xs = Array.from(svg.querySelectorAll('g.date text.lower-text'))
+      .map(t => parseFloat(t.getAttribute('x')))
+      .filter(Number.isFinite)
+      .sort((a, b) => a - b);
+
+    if (xs.length < 2) return null;
+    const diffs = [];
+    for (let i = 1; i < xs.length; i++) {
+      const d = xs[i] - xs[i - 1];
+      if (d > 0) diffs.push(d);
+    }
+    if (!diffs.length) return null;
+    diffs.sort((a, b) => a - b);
+    const monthW = diffs[Math.floor(diffs.length / 2)] || 0;
+    return monthW ? monthW / 30.4 : null;
+  }
+
+  // Global leftmost BAR edge (accounts for group transforms)
+  function getFirstBarLeft(svg) {
+    let minX = Infinity;
+    svg.querySelectorAll('rect.bar').forEach(r => {
+      try {
+        const x = r.getBBox().x;   // global (root) coords
+        if (x < minX) minX = x;
+      } catch {}
+    });
+    return Number.isFinite(minX) ? minX : 0;
+  }
+
+  // Global rightmost WRAPPER edge (labels/handles included)
+  function getRightmostWrapperX(svg) {
+    let right = 0;
+    svg.querySelectorAll('g.bar-wrapper').forEach(w => {
+      try {
+        const bb = w.getBBox();
+        const r = bb.x + bb.width;
+        if (r > right) right = r;
+      } catch {}
+    });
+    return right;
+  }
+
+  // Desktop crop with 10-day left buffer; width reaches rightmost wrapper + extra days.
+  let lastVB = { x: null, w: null };
+  function cropDesktop(svg, { leftDays = 10, column_width, extraDays = 0 }) {
+    const firstLeft = getFirstBarLeft(svg);
+    const rightEdge = getRightmostWrapperX(svg);
+    if (!Number.isFinite(firstLeft) || !Number.isFinite(rightEdge)) return;
+
+    let dpx = pxPerDayFromHeader(svg);
+    if (!dpx || dpx <= 0) dpx = (column_width || 350) / 30.4; // fallback
+
+    // Desired LEFT edge (can’t be < 0)
+    const vbX = Math.max(0, firstLeft - leftDays * dpx);
+
+    // Desired WIDTH: cover up to rightmost wrapper + EXTRA days (in px)
+    const vbW = Math.max(1, (rightEdge - vbX) + (Math.max(0, extraDays) + 0.25) * dpx);
+
+    const bbox = svg.getBBox();
+    const vbY = 0;
+    const vbH = bbox.height || 320;
+
+    // tiny guard to avoid oscillations from sub-pixel churn
+    const EPS = 0.5;
+    if (lastVB.x !== null && Math.abs(lastVB.x - vbX) < EPS &&
+        lastVB.w !== null && Math.abs(lastVB.w - vbW) < EPS) {
+      return;
+    }
+
+    svg.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+    svg.setAttribute('preserveAspectRatio', 'xMinYMin meet');
+
+    // lock pixel size to the chosen window; allow downscale via max-width
+    const pxW = Math.ceil(vbW);
+    const pxH = Math.ceil(vbH);
+    svg.setAttribute('width',  pxW);
+    svg.setAttribute('height', pxH);
+    svg.style.width    = pxW + 'px';
+    svg.style.maxWidth = '100%';
+    svg.style.height   = pxH + 'px';
+    svg.style.display  = 'block';
+
+    const wrapper = document.getElementById('gantt-target');
+    if (wrapper) wrapper.style.overflowX = 'hidden';
+
+    lastVB = { x: vbX, w: vbW };
+  }
+
+  // Edge labels using global coords
   function updateEdgeLabels(svg, kickoffDateISO, cashInDateISO) {
     if (!svg) return;
     const dateGroup = svg.querySelector('g.date');
     if (!dateGroup) return;
-  
-    // Remove all existing upper-text nodes
+
     dateGroup.querySelectorAll('text.upper-text').forEach(n => n.remove());
-  
-    const y = 25; // baseline
-  
-    // Grab the actual bars
+    const y = 25;
+
+    // Left = start of "prep" bar (global)
     const prepBar = svg.querySelector('[data-id="prep"] rect.bar');
-    const capitalWrapper = svg.querySelector('[data-id="capital"].bar-wrapper') 
-                      || svg.querySelector('[data-id="capital"]');
-    if (!prepBar || !capitalWrapper) return;
-  
-    const kickoffX = parseFloat(prepBar.getAttribute('x')) || 0;
-    let cashinX = 0;
-    if (capitalWrapper && capitalWrapper.getBBox) {
-      const bb = capitalWrapper.getBBox();
-      cashinX = bb.x + bb.width;   // right-most edge of wrapper
-    }
-  
-    // const kickoff = new Date(kickoffDateISO);
+    if (!prepBar) return;
+    const kickoffX = prepBar.getBBox().x;
+
+    // Right = farthest right edge of ANY bar-wrapper (labels included)
+    const farRightX = getRightmostWrapperX(svg);
+
     const cashIn  = new Date(cashInDateISO);
-  
+
     const t1 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     t1.setAttribute('class', 'upper-text');
     t1.setAttribute('x', kickoffX);
     t1.setAttribute('y', y);
     t1.setAttribute('text-anchor', 'start');
-    t1.style.textAnchor = 'start'; // inline override
-    t1.textContent = `With a launch today...`// — ${formatDDMMYYYY(kickoff)}`;
-  
+    t1.style.textAnchor = 'start';
+    t1.textContent = `With a launch today...`;
+
     const t2 = document.createElementNS('http://www.w3.org/2000/svg', 'text');
     t2.setAttribute('class', 'upper-text');
-    t2.setAttribute('x', cashinX);
+    t2.setAttribute('x', farRightX);
     t2.setAttribute('y', y);
     t2.setAttribute('text-anchor', 'end');
-    t2.style.textAnchor = 'end'; // inline override
+    t2.style.textAnchor = 'end';
     t2.textContent = `Expected closing ${monthBucket(cashIn)}`;
-  
+
     dateGroup.appendChild(t1);
     dateGroup.appendChild(t2);
   }
-  
 
   // Mobile-only: push each bar to the bottom of its grid row
   function adjustBarVerticalMobile(svg) {
     if (!svg) return;
     const rows = Array.from(svg.querySelectorAll('rect.grid-row'));
     if (!rows.length) return;
-  
+
     const rowTops = rows.map(r => ({
       y: parseFloat(r.getAttribute('y')) || 0,
       h: parseFloat(r.getAttribute('height')) || 0
     }));
-  
+
     const bars = svg.querySelectorAll('g.bar-group');
     bars.forEach(group => {
-      const bar  = group.querySelector('rect.bar');
+      const bar = group.querySelector('rect.bar');
       const prog = group.querySelector('rect.bar-progress');
       if (!bar) return;
-  
+
       const y0 = parseFloat(bar.getAttribute('y')) || 0;
       const h  = parseFloat(bar.getAttribute('height')) || 0;
-  
+
       // nearest row
       let best = rowTops[0], bestDelta = Math.abs(y0 - rowTops[0].y);
       for (let i = 1; i < rowTops.length; i++) {
         const d = Math.abs(y0 - rowTops[i].y);
         if (d < bestDelta) { best = rowTops[i]; bestDelta = d; }
       }
-  
-      // Sit the bar exactly on the row bottom (no gap)
-      const GAP_BOTTOM = 0; // ← was 3
+
+      const GAP_BOTTOM = 3;
       const newY = Math.max(best.y, best.y + best.h - h - GAP_BOTTOM);
-  
-      if (Math.abs(newY - y0) > 0.1) {
-        const delta = newY - y0;
+
+      if (Math.abs(newY - y0) > 0.5) {
         bar.setAttribute('y', newY);
         if (prog) prog.setAttribute('y', newY);
-  
-        // keep handles visually aligned (even though dragging is disabled)
-        const handles = group.parentElement?.querySelectorAll('.handle-group rect') || [];
-        handles.forEach(hnd => {
-          const hy = parseFloat(hnd.getAttribute('y')) || 0;
-          hnd.setAttribute('y', hy + delta);
-        });
       }
     });
   }
-  
 
-  // 1 · Date-format helper
+  // --- dates and tasks ---
   const today = new Date();
-  const fmt   = d => d.toISOString().slice(0, 10);   // "YYYY-MM-DD"
+  const fmt   = d => d.toISOString().slice(0, 10);
 
-  // 2 · Task definitions
   const taskDefs = [
     { id:'prep',    name:'Deck & Data Room Prep',        duration:14, progress:0,
       custom:{ info:'Finalize internal assessment, narrative and data pack'} },
@@ -177,9 +249,8 @@ const isMobile =
     };
   });
 
-  // 3 · Initialize on DOMContentLoaded
+  // --- init ---
   document.addEventListener('DOMContentLoaded', () => {
-    // Ensure popup anchoring works even if CSS loads late
     const containerEl = document.getElementById('gantt-target');
     if (containerEl && getComputedStyle(containerEl).position === 'static') {
       containerEl.style.position = 'relative';
@@ -190,12 +261,12 @@ const isMobile =
 
     const column_width = isMobile ? 50 : 350;
     const padding      = isMobile ? 12  : 18;
-
-    // Desktop = hover-only; Mobile = click/tap
     const popupTrigger = isMobile ? 'click' : 'mouseenter';
 
     const gantt = new Gantt('#gantt-target', tasks, {
       view_mode  : 'Month',
+      // NOTE: Frappe Gantt ignores custom start_date/end_date for axis extents,
+      // so we crop the SVG instead (desktop) after render.
       start_date : firstDate,
       end_date   : lastDate,
       readonly:           true,
@@ -224,13 +295,28 @@ const isMobile =
       on_progress_change: () => {}
     });
 
-    // Kickoff/Cash-in edge labels (desktop first render)
+    // Edge labels after first paint
     setTimeout(() => {
       const svg = document.querySelector('#gantt-target svg');
       if (svg) updateEdgeLabels(svg, firstDate, lastDate);
     }, 0);
 
-    // MOBILE viewport + label clamping + vertical bar fix + edge labels against cropped viewBox
+    // ===== DESKTOP: crop so left edge is exactly first BAR - 10 days; extend right by extra-days =====
+    if (!isMobile) {
+      const extraDays = 15; // <— NEW
+      const recrop = () => {
+        const svg = document.querySelector('#gantt-target svg');
+        if (!svg) return;
+        cropDesktop(svg, { leftDays: 10, column_width, extraDays }); // <— pass through
+        updateEdgeLabels(svg, firstDate, lastDate);
+      };
+      // after layout / animations / fonts
+      requestAnimationFrame(() => requestAnimationFrame(recrop));
+      setTimeout(recrop, 700);
+      window.addEventListener('resize', recrop);
+    }
+
+    // ===== MOBILE path unchanged (cropped viewport, label clamp, vertical tidy) =====
     if (isMobile) {
       setTimeout(() => {
         const svg = document.querySelector('#gantt-target svg');
@@ -256,12 +342,14 @@ const isMobile =
 
         // Horizontal extents of all bars
         const bars = Array.from(svg.querySelectorAll('rect.bar'));
-        const firstBarX    = bars.length ? Math.min(...bars.map(r => parseFloat(r.getAttribute('x')) || 0)) : 0;
-        const lastBarRight = bars.length ? Math.max(...bars.map(r => {
-          const x = parseFloat(r.getAttribute('x')) || 0;
-          const w = parseFloat(r.getAttribute('width')) || 0;
-          return x + w;
-        })) : 0;
+        const firstBarX    = bars.length ? Math.min(...bars.map(r => r.getBBox().x)) : 0;
+        const lastBarRight = (function(){
+          let mx = 0;
+          Array.from(svg.querySelectorAll('g.bar-wrapper')).forEach(w=>{
+            try { const bb = w.getBBox(); mx = Math.max(mx, bb.x + bb.width); } catch {}
+          });
+          return mx;
+        })();
 
         // Pads (in SVG units)
         const LEFT_PAD_PX  = 0.12 * monthWidth;
@@ -310,13 +398,11 @@ const isMobile =
         if (dateGroup) dateGroup.setAttribute('transform', 'translate(0, -7)');
         if (headerRect) headerRect.setAttribute('height', 50);
 
-        // Clamp long labels after layout settles
+        // After layout settles, clamp labels, fix bars, and refresh edge labels
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             clampLabelsToViewport(svg, xOffset, visibleWidth);
-            // Place bar bottoms neatly within their rows (mobile-only)
             adjustBarVerticalMobile(svg);
-            // Edge labels against the cropped viewBox
             updateEdgeLabels(svg, firstDate, lastDate);
           });
         });
@@ -358,12 +444,10 @@ const isMobile =
       let wrapper   = document.querySelector('.popup-wrapper');
       if (!wrapper || !container) return;
 
-      // Ensure the wrapper is anchored to the container and sits on top
       if (wrapper.parentElement !== container) container.appendChild(wrapper);
       wrapper.style.zIndex = '5';
 
       wrapper.classList.remove('hidden');
-      // Reset any previous transform/pos so measurements are stable
       wrapper.style.transform    = 'none';
       wrapper.style.left         = '0px';
       wrapper.style.top          = '0px';
@@ -372,32 +456,28 @@ const isMobile =
 
       requestAnimationFrame(() => {
         const anchorRect = container.getBoundingClientRect();
-        const barRect    = barElement.getBoundingClientRect();                 // wrapper (for vertical)
-        const barRectOnly = (barElement.querySelector('rect.bar')?.getBoundingClientRect()) || barRect; // actual BAR for horizontal
+        const barRect    = barElement.getBoundingClientRect();
+        const barRectOnly = (barElement.querySelector('rect.bar')?.getBoundingClientRect()) || barRect;
 
         if (isTouchDevice()) {
-          // MOBILE: perfectly centered
           const leftPx = (anchorRect.width  / 2);
           const topPx  = (anchorRect.height / 2);
           wrapper.style.left      = leftPx + 'px';
           wrapper.style.top       = topPx  + 'px';
           wrapper.style.transform = 'translate(-50%, -50%)';
         } else {
-          // DESKTOP: right of BAR by default; flip left if would overflow.
           const popupRect = wrapper.getBoundingClientRect();
           const popupW    = popupRect.width;
           const popupH    = popupRect.height;
 
-          // Vertical: above bar else below
           const V_GAP = 10;
           let topPx  = barRect.top - anchorRect.top - popupH - V_GAP;
           if (topPx < 0) topPx = barRect.bottom - anchorRect.top + V_GAP;
 
-          // Horizontal against the BAR (not the label)
           const GAP = 10, LEFT_MARGIN = 8, RIGHT_MARGIN = 12;
-          let leftPx = (barRectOnly.right - anchorRect.left) + GAP; // default to the right of the BAR
+          let leftPx = (barRectOnly.right - anchorRect.left) + GAP;
           if (leftPx + popupW > anchorRect.width - RIGHT_MARGIN) {
-            leftPx = (barRectOnly.left - anchorRect.left) - popupW - GAP;      // flip to left of the BAR
+            leftPx = (barRectOnly.left - anchorRect.left) - popupW - GAP;
           }
           if (leftPx < LEFT_MARGIN) leftPx = LEFT_MARGIN;
 
@@ -477,7 +557,7 @@ const isMobile =
       });
     });
 
-    // 4 · Trim whitespace below bars — desktop only
+    // Trim whitespace below bars — desktop only (height ties to content)
     setTimeout(() => {
       const svg = document.querySelector('#gantt-target svg');
       if (!svg || isMobile) return;
@@ -486,43 +566,17 @@ const isMobile =
       const tgt = document.getElementById('gantt-target');
       if (tgt) tgt.style.height = bbox.height + 'px';
     }, 0);
-
-    // 5 · Prevent horizontal pan/scroll gestures
-    const ganttTarget = document.getElementById('gantt-target');
-    if (ganttTarget) {
-      ganttTarget.addEventListener(
-        'wheel',
-        e => { if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) e.preventDefault(); },
-        { passive: false }
-      );
-      let lastTouchX = null;
-      ganttTarget.addEventListener('touchstart', e => {
-        if (e.touches.length === 1) lastTouchX = e.touches[0].clientX;
-      });
-      ganttTarget.addEventListener(
-        'touchmove',
-        e => {
-          if (e.touches.length === 1 && lastTouchX !== null) {
-            const deltaX = e.touches[0].clientX - lastTouchX;
-            if (Math.abs(deltaX) > 0) e.preventDefault();
-          }
-        },
-        { passive: false }
-      );
-    }
   });
 
   // Helper: clamp overflowing labels (mobile only)
-  // End-to-bar-left placement with LEFT clamp + ellipsis fitting.
   function clampLabelsToViewport(svg, xOffset, visibleWidth) {
-    const GAP = 6;                     // gap between text end and the bar's left edge
+    const GAP = 6;
     const rightLimit = xOffset + visibleWidth - 6;
     const leftLimit  = xOffset + 4;
 
     const labels = svg.querySelectorAll('text.bar-label');
 
     labels.forEach(label => {
-      // Save orig x + text for restoration
       if (!label.hasAttribute('data-x-orig')) {
         const x0 = label.getAttribute('x');
         if (x0 !== null) label.setAttribute('data-x-orig', x0);
@@ -533,7 +587,6 @@ const isMobile =
 
       const currX = parseFloat(label.getAttribute('x')) || 0;
 
-      // Measure current width
       let textW = 0;
       try {
         textW = label.getComputedTextLength
@@ -545,7 +598,6 @@ const isMobile =
 
       const wouldOverflow = currX + textW > rightLimit;
       if (!wouldOverflow) {
-        // restore original if previously clamped
         const xOrig = label.getAttribute('data-x-orig');
         if (xOrig !== null) label.setAttribute('x', xOrig);
         const txtOrig = label.getAttribute('data-text-orig');
@@ -556,25 +608,20 @@ const isMobile =
         return;
       }
 
-      // Find associated bar
       const group = label.closest('.bar-group');
       const bar   = group && group.querySelector('rect.bar');
       if (!bar) return;
       const barX = parseFloat(bar.getAttribute('x')) || 0;
 
-      // Target: right edge of the text sits at bar-left minus GAP
       const targetRight = barX - GAP;
 
-      // Anchor by the RIGHT edge so we "kiss" the bar precisely
       label.setAttribute('text-anchor', 'end');
       label.setAttribute('x', targetRight);
 
-      // Ensure dark color / no internal white style
       label.classList.add('label-clamped');
       label.classList.remove('big');
       label.style.fill = 'var(--text-dark)';
 
-      // If the left edge would go past the viewport's leftLimit, truncate to fit
       const original = label.getAttribute('data-text-orig') || label.textContent;
 
       const leftEdge = () => {
@@ -604,7 +651,6 @@ const isMobile =
         }
         label.textContent = fit;
       } else if (leftEdge() < leftLimit) {
-        // Fallback if precise measuring isn't available
         label.textContent = '…';
       }
     });
